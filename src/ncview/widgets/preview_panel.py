@@ -5,16 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from textual.containers import VerticalScroll
-from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Static
 
 from ncview.utils.file_types import registry
 from ncview.viewers.base import BaseViewer
-
-
-class PreviewClosed(Message):
-    """Posted when user dismisses the preview panel."""
 
 
 class PreviewPanel(Widget):
@@ -41,10 +35,6 @@ class PreviewPanel(Widget):
     async def show_file(self, path: Path) -> None:
         """Load the appropriate viewer for the given file."""
         if path.is_dir():
-            return
-
-        # Don't reload if same file
-        if self._current_path == path:
             return
         self._current_path = path
 

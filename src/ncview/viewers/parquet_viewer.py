@@ -143,12 +143,9 @@ class ParquetViewer(BaseViewer):
 
             self.app.call_from_thread(_add_columns)
 
-            # Batch convert to strings using Polars (much faster than Python loop)
             str_df = df.cast({col: pl.Utf8 for col in df.columns}).fill_null("null")
-            rows = []
-            for i in range(len(str_df)):
-                row = [str(i)] + [str_df[col][i] for col in str_df.columns]
-                rows.append(tuple(row))
+            raw_rows = str_df.rows()
+            rows = [tuple([str(i)] + list(r)) for i, r in enumerate(raw_rows)]
 
             def _add_rows():
                 dt.add_rows(rows)

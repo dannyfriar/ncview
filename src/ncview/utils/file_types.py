@@ -34,12 +34,34 @@ class ViewerRegistry:
                     best_priority = p
 
         if best is None:
-            # Return fallback
+            # Try text viewer for extensionless files that look like text
+            if not ext and _is_likely_text(path):
+                from ncview.viewers.text_viewer import TextViewer
+                return TextViewer
             from ncview.viewers.fallback_viewer import FallbackViewer
-
             return FallbackViewer
 
         return best
+
+
+# Common extensionless text files
+_TEXT_FILENAMES = {
+    "makefile", "dockerfile", "vagrantfile", "gemfile", "rakefile",
+    "license", "licence", "readme", "changelog", "authors", "contributors",
+    "todo", "news", "install", "copying", "notice",
+}
+
+
+def _is_likely_text(path: Path) -> bool:
+    """Heuristic check for extensionless text files."""
+    if path.name.lower() in _TEXT_FILENAMES:
+        return True
+    # Peek at first 512 bytes for null bytes (binary indicator)
+    try:
+        chunk = path.read_bytes()[:512]
+        return b"\x00" not in chunk
+    except OSError:
+        return False
 
 
 # Singleton registry

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from enum import Enum
 from pathlib import Path
 
@@ -101,6 +102,10 @@ class FileBrowser(Widget):
     def on_key(self, event: Key) -> None:
         """Intercept keys before ListView eats them."""
         if self._search_active:
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self._finish_search()
             return
         if event.key == "backspace":
             event.prevent_default()
@@ -134,9 +139,17 @@ class FileBrowser(Widget):
             [e for e in entries if not e.is_dir()],
             key=self._sort_func,
         )
-        self._entries = dirs + files
+        all_entries = dirs + files
 
-        self.app.call_from_thread(self._populate_list)
+        # Pre-compute sizes on the worker thread to avoid stat() on main thread
+        sizes: dict[str, int] = {}
+        for entry in files:
+            try:
+                sizes[entry.name] = entry.stat().st_size
+            except OSError:
+                pass
+
+        self.app.call_from_thread(self._populate_list, all_entries, sizes)
 
     def _sort_func(self, path: Path):
         if self._sort_key == SortKey.SIZE:
@@ -151,19 +164,20 @@ class FileBrowser(Widget):
                 return 0
         return path.name.lower()
 
-    def _populate_list(self) -> None:
+    def _populate_list(self, entries: list[Path], sizes: dict[str, int]) -> None:
         """Rebuild the list view with current entries."""
+        self._entries = entries
         lv = self.query_one("#file-list", ListView)
         lv.clear()
 
         # Add parent directory entry
-        if self.current_dir != self.current_dir.root:
+        if self.current_dir != Path(self.current_dir.root):
             label = Text()
             label.append("\U0001f4c1 ", style="bold")
             label.append("..", style="bold yellow")
             lv.append(ListItem(Label(label), name=".."))
 
-        for entry in self._entries:
+        for entry in entries:
             label = Text()
             icon = file_icon(entry)
             label.append(f"{icon} ")
@@ -171,17 +185,14 @@ class FileBrowser(Widget):
                 label.append(entry.name + "/", style="bold blue")
             else:
                 label.append(entry.name)
-                try:
-                    size = human_size(entry.stat().st_size)
-                    label.append(f"  {size}", style="dim")
-                except OSError:
-                    pass
+                if entry.name in sizes:
+                    label.append(f"  {human_size(sizes[entry.name])}", style="dim")
             lv.append(ListItem(Label(label), name=entry.name))
 
         sort_label = self._sort_key.value
         hidden_label = "shown" if self._show_hidden else "hidden"
-        count_dirs = sum(1 for e in self._entries if e.is_dir())
-        count_files = len(self._entries) - count_dirs
+        count_dirs = sum(1 for e in entries if e.is_dir())
+        count_files = len(entries) - count_dirs
         self.border_subtitle = f"{count_dirs} dirs, {count_files} files | sort:{sort_label} | hidden:{hidden_label}"
 
         # Post directory changed
@@ -292,4 +303,4 @@ class FileBrowser(Widget):
         editor = os.environ.get("EDITOR", "vim")
         import subprocess
         with self.app.suspend():
-            subprocess.call([editor, str(path)])
+            subprocess.call([*shlex.split(editor), str(path)])

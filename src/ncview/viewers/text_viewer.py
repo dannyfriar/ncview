@@ -11,6 +11,7 @@ from textual.widgets import Static
 from ncview.viewers.base import BaseViewer
 
 MAX_LINES = 10_000
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 # Map file extensions to Rich lexer names
 _EXT_TO_LEXER: dict[str, str] = {
@@ -102,6 +103,13 @@ class TextViewer(BaseViewer):
     async def load_content(self) -> None:
         widget = self.query_one("#text-content", Static)
         try:
+            file_size = self.path.stat().st_size
+            if file_size > MAX_FILE_SIZE:
+                widget.update(Text(
+                    f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
+                    style="bold red",
+                ))
+                return
             raw = self.path.read_text(errors="replace")
             lines = raw.split("\n")
             if len(lines) > MAX_LINES:

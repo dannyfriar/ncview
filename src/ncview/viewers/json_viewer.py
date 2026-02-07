@@ -12,6 +12,8 @@ from textual.widgets import Static, Tree
 from ncview.viewers.base import BaseViewer
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_DEPTH = 50
+MAX_NODES = 50_000
 
 
 class JsonTree(Tree):
@@ -110,6 +112,7 @@ class JsonViewer(BaseViewer):
             info.update(info_text)
 
             tree.root.set_label(Text(self._describe_type(data), style="bold"))
+            self._node_count = 0
             self._build_tree(tree.root, data)
             tree.root.expand()
             tree.focus()
@@ -125,18 +128,25 @@ class JsonViewer(BaseViewer):
             return f"{self.path.name}  [] {len(data)} items"
         return self.path.name
 
-    def _build_tree(self, node, data, key: str | None = None) -> None:
+    def _build_tree(self, node, data, key: str | None = None, depth: int = 0) -> None:
         """Recursively build tree nodes from JSON data."""
+        if self._node_count >= MAX_NODES:
+            node.add_leaf(Text(f"... truncated ({MAX_NODES:,} node limit)", style="italic dim"))
+            return
+        if depth >= MAX_DEPTH:
+            node.add_leaf(Text(f"... depth limit ({MAX_DEPTH})", style="italic dim"))
+            return
+        self._node_count += 1
         if isinstance(data, dict):
             label = self._make_label(key, f"{{}} {len(data)} keys")
             branch = node.add(label)
             for k, v in data.items():
-                self._build_tree(branch, v, key=k)
+                self._build_tree(branch, v, key=k, depth=depth + 1)
         elif isinstance(data, list):
             label = self._make_label(key, f"[] {len(data)} items")
             branch = node.add(label)
             for i, item in enumerate(data):
-                self._build_tree(branch, item, key=str(i))
+                self._build_tree(branch, item, key=str(i), depth=depth + 1)
         else:
             label = self._format_value(key, data)
             node.add_leaf(label)

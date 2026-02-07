@@ -1,0 +1,63 @@
+{
+  "name": "ncview test",
+  "version": "1.0",
+  "features": [
+    "parquet",
+    "json",
+    "text"
+  ],
+  "config": {
+    "max_rows": 1000,
+    "theme": "monokai",
+    "nested": {
+      "a": 1,
+      "b": [
+        true,
+        false,
+        null
+      ]
+    }
+  },
+  "items": [
+    {
+      "id": 0,
+      "value": "item_0"
+    },
+    {
+      "id": 1,
+      "value": "item_1"
+    },
+    {
+      "id": 2,
+      "value": "item_2"
+    },
+    {
+      "id": 3,
+      "value": "item_3"
+    },
+    {
+      "id": 4,
+      "value": "item_4"
+    },
+    {
+      "id": 5,
+      "value": "item_5"
+    },
+    {
+      "id": 6,
+      "value": "item_6"
+    },
+    {
+      "id": 7,
+      "value": "item_7"
+    },
+    {
+      "id": 8,
+      "value": "item_8"
+    },
+    {
+      "id": 9,
+      "value": "item_9"
+    }
+  ]
+}

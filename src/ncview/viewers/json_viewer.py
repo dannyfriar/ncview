@@ -1,0 +1,167 @@
+"""JSON viewer — collapsible tree with vim-style navigation."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from rich.text import Text
+from textual.binding import Binding
+from textual.widgets import Static, Tree
+
+from ncview.viewers.base import BaseViewer
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+class JsonTree(Tree):
+    """Tree with vim-style keybindings for JSON navigation."""
+
+    BINDINGS = [
+        Binding("j", "cursor_down", "Down", priority=True),
+        Binding("k", "cursor_up", "Up", priority=True),
+        Binding("l", "expand_node", "Expand", priority=True),
+        Binding("h", "collapse_node", "Collapse", priority=True),
+        Binding("space", "toggle_node", "Toggle", priority=True),
+        Binding("enter", "select_cursor", "Toggle", priority=True),
+        Binding("g", "scroll_home", "Top", priority=True),
+        Binding("G", "scroll_end", "Bottom", priority=True),
+    ]
+
+    def action_expand_node(self) -> None:
+        """Expand current node, or move into first child if already expanded."""
+        node = self.cursor_node
+        if node is None:
+            return
+        if not node.allow_expand:
+            return
+        if not node.is_expanded:
+            node.expand()
+        elif node.children:
+            # Already expanded — move cursor to first child
+            self.cursor_line = self.cursor_line + 1
+
+    def action_collapse_node(self) -> None:
+        """Collapse current node, or move to parent if already collapsed/leaf."""
+        node = self.cursor_node
+        if node is None:
+            return
+        if node.is_expanded and node.allow_expand:
+            node.collapse()
+        elif node.parent is not None:
+            # Move to parent
+            self.select_node(node.parent)
+            node.parent.collapse()
+
+
+class JsonViewer(BaseViewer):
+    """Displays JSON files as a navigable collapsible tree."""
+
+    DEFAULT_CSS = """
+    JsonViewer {
+        height: 1fr;
+    }
+    JsonViewer > #json-info {
+        height: auto;
+        padding: 0 1;
+        background: $primary-background;
+        color: $text;
+    }
+    JsonViewer > JsonTree {
+        height: 1fr;
+    }
+    """
+
+    @staticmethod
+    def supported_extensions() -> set[str]:
+        return {".json", ".geojson", ".jsonl"}
+
+    @staticmethod
+    def priority() -> int:
+        return 5
+
+    def compose(self):
+        yield Static(id="json-info")
+        yield JsonTree("root", id="json-tree")
+
+    async def load_content(self) -> None:
+        tree = self.query_one("#json-tree", JsonTree)
+        info = self.query_one("#json-info", Static)
+        try:
+            size = self.path.stat().st_size
+            if size > MAX_FILE_SIZE:
+                tree.root.set_label(
+                    Text(f"File too large ({size / 1024 / 1024:.1f} MB > 10 MB limit)", style="bold red")
+                )
+                return
+
+            raw = self.path.read_text(errors="replace")
+
+            if self.path.suffix.lower() == ".jsonl":
+                lines = [json.loads(line) for line in raw.strip().split("\n") if line.strip()]
+                data = lines
+            else:
+                data = json.loads(raw)
+
+            # Info bar
+            info_text = Text()
+            info_text.append(self.path.name, style="bold")
+            info_text.append("  j/k: move  l: expand  h: collapse  space: toggle", style="dim")
+            info.update(info_text)
+
+            tree.root.set_label(Text(self._describe_type(data), style="bold"))
+            self._build_tree(tree.root, data)
+            tree.root.expand()
+            tree.focus()
+        except json.JSONDecodeError as e:
+            tree.root.set_label(Text(f"Invalid JSON: {e}", style="bold red"))
+        except Exception as e:
+            tree.root.set_label(Text(f"Error: {e}", style="bold red"))
+
+    def _describe_type(self, data) -> str:
+        if isinstance(data, dict):
+            return f"{self.path.name}  {{}} {len(data)} keys"
+        elif isinstance(data, list):
+            return f"{self.path.name}  [] {len(data)} items"
+        return self.path.name
+
+    def _build_tree(self, node, data, key: str | None = None) -> None:
+        """Recursively build tree nodes from JSON data."""
+        if isinstance(data, dict):
+            label = self._make_label(key, f"{{}} {len(data)} keys")
+            branch = node.add(label)
+            for k, v in data.items():
+                self._build_tree(branch, v, key=k)
+        elif isinstance(data, list):
+            label = self._make_label(key, f"[] {len(data)} items")
+            branch = node.add(label)
+            for i, item in enumerate(data):
+                self._build_tree(branch, item, key=str(i))
+        else:
+            label = self._format_value(key, data)
+            node.add_leaf(label)
+
+    def _make_label(self, key: str | None, type_info: str) -> Text:
+        text = Text()
+        if key is not None:
+            text.append(key, style="bold white")
+            text.append(": ", style="dim")
+        text.append(type_info, style="dim italic")
+        return text
+
+    def _format_value(self, key: str | None, value) -> Text:
+        text = Text()
+        if key is not None:
+            text.append(key, style="bold white")
+            text.append(": ", style="dim")
+        if isinstance(value, str):
+            text.append(f'"{value}"', style="green")
+        elif isinstance(value, bool):
+            text.append(str(value).lower(), style="yellow")
+        elif isinstance(value, (int, float)):
+            text.append(str(value), style="cyan")
+        elif value is None:
+            text.append("null", style="dim italic")
+        else:
+            text.append(repr(value), style="white")
+        return text

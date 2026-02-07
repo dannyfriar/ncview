@@ -1,0 +1,30 @@
+Header {
+    dock: top;
+}
+
+Footer {
+    dock: bottom;
+}
+
+PathBar {
+    dock: top;
+}
+
+FileBrowser {
+    height: 1fr;
+    width: 1fr;
+    border: solid $primary;
+    border-title-color: $text;
+}
+
+PreviewPanel {
+    height: 1fr;
+    width: 1fr;
+    border: solid $secondary;
+    border-title-color: $text;
+    display: none;
+}
+
+PreviewPanel.visible {
+    display: block;
+}

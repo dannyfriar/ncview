@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ncview"
+version = "0.1.0"
+description = "Terminal file browser with vim keybindings"
+requires-python = ">=3.12"
+dependencies = [
+    "textual>=0.85.0",
+    "polars>=1.0.0",
+    "pyarrow>=14.0.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "textual-dev>=1.0.0",
+]
+
+[project.scripts]
+ncview = "ncview.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ncview"]

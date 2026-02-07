@@ -1,0 +1,295 @@
+"""Flat ListView file browser with vim keybindings."""
+
+from __future__ import annotations
+
+import os
+from enum import Enum
+from pathlib import Path
+
+from rich.text import Text
+from textual import on, work
+from textual.events import Key
+from textual.message import Message
+from textual.widget import Widget
+from textual.widgets import Input, Label, ListItem, ListView
+
+from ncview.utils.file_info import file_icon, human_size
+
+
+class SortKey(Enum):
+    NAME = "name"
+    SIZE = "size"
+    MODIFIED = "modified"
+
+
+class FileHighlighted(Message):
+    """Posted when a file is highlighted (cursor moved) in the browser."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+
+class FileSelected(Message):
+    """Posted when user explicitly opens a file (Enter/l)."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+
+class DirectoryChanged(Message):
+    """Posted when the browser navigates to a new directory."""
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+
+
+class FileBrowser(Widget):
+    """Flat directory listing with vim keybindings."""
+
+    DEFAULT_CSS = """
+    FileBrowser {
+        height: 1fr;
+        width: 1fr;
+    }
+    FileBrowser > ListView {
+        height: 1fr;
+    }
+    FileBrowser > ListView > ListItem {
+        height: 1;
+        padding: 0 1;
+    }
+    FileBrowser > ListView > ListItem:hover {
+        background: $surface;
+    }
+    FileBrowser > Input {
+        dock: bottom;
+        display: none;
+    }
+    """
+
+    BINDINGS = [
+        ("j", "cursor_down", "Down"),
+        ("k", "cursor_up", "Up"),
+        ("l", "enter_or_open", "Open"),
+        ("h", "parent_dir", "Parent"),
+        ("g", "jump_top", "Top"),
+        ("G", "jump_bottom", "Bottom"),  # noqa: E741
+        ("period", "toggle_hidden", "Toggle hidden"),
+        ("s", "cycle_sort", "Cycle sort"),
+        ("slash", "start_search", "Search"),
+        ("e", "open_editor", "Editor"),
+    ]
+
+    def __init__(self, start_path: Path | None = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.current_dir = (start_path or Path.cwd()).resolve()
+        self._entries: list[Path] = []
+        self._show_hidden = False
+        self._sort_key = SortKey.NAME
+        self._search_active = False
+
+    def compose(self):
+        yield ListView(id="file-list")
+        yield Input(placeholder="Search...", id="search-input")
+
+    def on_mount(self) -> None:
+        self._load_directory()
+
+    def on_key(self, event: Key) -> None:
+        """Intercept keys before ListView eats them."""
+        if self._search_active:
+            return
+        if event.key == "backspace":
+            event.prevent_default()
+            event.stop()
+            self.action_parent_dir()
+        elif event.key == "left":
+            event.prevent_default()
+            event.stop()
+            self.action_parent_dir()
+        elif event.key == "right":
+            event.prevent_default()
+            event.stop()
+            self.action_enter_or_open()
+
+    @work(thread=True, exclusive=True)
+    def _load_directory(self) -> None:
+        """Load directory contents in a background thread."""
+        try:
+            entries = list(self.current_dir.iterdir())
+        except PermissionError:
+            entries = []
+
+        if not self._show_hidden:
+            entries = [e for e in entries if not e.name.startswith(".")]
+
+        dirs = sorted(
+            [e for e in entries if e.is_dir()],
+            key=self._sort_func,
+        )
+        files = sorted(
+            [e for e in entries if not e.is_dir()],
+            key=self._sort_func,
+        )
+        self._entries = dirs + files
+
+        self.app.call_from_thread(self._populate_list)
+
+    def _sort_func(self, path: Path):
+        if self._sort_key == SortKey.SIZE:
+            try:
+                return path.stat().st_size
+            except OSError:
+                return 0
+        elif self._sort_key == SortKey.MODIFIED:
+            try:
+                return -path.stat().st_mtime
+            except OSError:
+                return 0
+        return path.name.lower()
+
+    def _populate_list(self) -> None:
+        """Rebuild the list view with current entries."""
+        lv = self.query_one("#file-list", ListView)
+        lv.clear()
+
+        # Add parent directory entry
+        if self.current_dir != self.current_dir.root:
+            label = Text()
+            label.append("\U0001f4c1 ", style="bold")
+            label.append("..", style="bold yellow")
+            lv.append(ListItem(Label(label), name=".."))
+
+        for entry in self._entries:
+            label = Text()
+            icon = file_icon(entry)
+            label.append(f"{icon} ")
+            if entry.is_dir():
+                label.append(entry.name + "/", style="bold blue")
+            else:
+                label.append(entry.name)
+                try:
+                    size = human_size(entry.stat().st_size)
+                    label.append(f"  {size}", style="dim")
+                except OSError:
+                    pass
+            lv.append(ListItem(Label(label), name=entry.name))
+
+        sort_label = self._sort_key.value
+        hidden_label = "shown" if self._show_hidden else "hidden"
+        count_dirs = sum(1 for e in self._entries if e.is_dir())
+        count_files = len(self._entries) - count_dirs
+        self.border_subtitle = f"{count_dirs} dirs, {count_files} files | sort:{sort_label} | hidden:{hidden_label}"
+
+        # Post directory changed
+        self.post_message(DirectoryChanged(self.current_dir))
+
+        # Auto-highlight first item
+        if lv.children:
+            lv.index = 0
+
+    @on(ListView.Highlighted)
+    def _on_list_highlighted(self, event: ListView.Highlighted) -> None:
+        path = self._get_highlighted_path()
+        if path is not None:
+            self.post_message(FileHighlighted(path))
+
+    @on(ListView.Selected)
+    def _on_list_selected(self, event: ListView.Selected) -> None:
+        """Handle Enter key on ListView — enter directory or open file."""
+        self.action_enter_or_open()
+
+    def _get_highlighted_path(self) -> Path | None:
+        """Return the Path of the currently highlighted item."""
+        lv = self.query_one("#file-list", ListView)
+        if lv.highlighted_child is None:
+            return None
+        name = lv.highlighted_child.name
+        if name == "..":
+            return self.current_dir.parent
+        return self.current_dir / name
+
+    def _navigate_to(self, path: Path) -> None:
+        """Change to a new directory."""
+        path = path.resolve()
+        if path.is_dir():
+            self.current_dir = path
+            self._load_directory()
+
+    # --- Actions bound to vim keys ---
+
+    def action_cursor_down(self) -> None:
+        lv = self.query_one("#file-list", ListView)
+        lv.action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        lv = self.query_one("#file-list", ListView)
+        lv.action_cursor_up()
+
+    def action_enter_or_open(self) -> None:
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        if path.is_dir():
+            self._navigate_to(path)
+        else:
+            self.post_message(FileSelected(path))
+
+    def action_parent_dir(self) -> None:
+        self._navigate_to(self.current_dir.parent)
+
+    def action_jump_top(self) -> None:
+        lv = self.query_one("#file-list", ListView)
+        lv.index = 0
+
+    def action_jump_bottom(self) -> None:
+        lv = self.query_one("#file-list", ListView)
+        if lv.children:
+            lv.index = len(lv.children) - 1
+
+    def action_toggle_hidden(self) -> None:
+        self._show_hidden = not self._show_hidden
+        self._load_directory()
+
+    def action_cycle_sort(self) -> None:
+        keys = list(SortKey)
+        idx = keys.index(self._sort_key)
+        self._sort_key = keys[(idx + 1) % len(keys)]
+        self._load_directory()
+
+    def action_start_search(self) -> None:
+        search_input = self.query_one("#search-input", Input)
+        search_input.styles.display = "block"
+        search_input.value = ""
+        search_input.focus()
+        self._search_active = True
+
+    @on(Input.Submitted, "#search-input")
+    def _on_search_submitted(self, event: Input.Submitted) -> None:
+        query = event.value.lower()
+        self._finish_search()
+        if not query:
+            return
+        lv = self.query_one("#file-list", ListView)
+        for i, child in enumerate(lv.children):
+            if child.name and query in child.name.lower():
+                lv.index = i
+                break
+
+    def _finish_search(self) -> None:
+        search_input = self.query_one("#search-input", Input)
+        search_input.styles.display = "none"
+        self._search_active = False
+        self.query_one("#file-list", ListView).focus()
+
+    def action_open_editor(self) -> None:
+        path = self._get_highlighted_path()
+        if path is None or path.is_dir():
+            return
+        editor = os.environ.get("EDITOR", "vim")
+        import subprocess
+        with self.app.suspend():
+            subprocess.call([editor, str(path)])

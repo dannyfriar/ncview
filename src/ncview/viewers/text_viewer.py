@@ -1,0 +1,125 @@
+"""Text viewer — syntax-highlighted scrollable text."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from rich.syntax import Syntax
+from rich.text import Text
+from textual.widgets import Static
+
+from ncview.viewers.base import BaseViewer
+
+MAX_LINES = 10_000
+
+# Map file extensions to Rich lexer names
+_EXT_TO_LEXER: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".jsx": "jsx",
+    ".tsx": "tsx",
+    ".rs": "rust",
+    ".go": "go",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".java": "java",
+    ".rb": "ruby",
+    ".sh": "bash",
+    ".bash": "bash",
+    ".zsh": "zsh",
+    ".fish": "fish",
+    ".sql": "sql",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".scss": "scss",
+    ".less": "less",
+    ".xml": "xml",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".ini": "ini",
+    ".cfg": "ini",
+    ".conf": "ini",
+    ".md": "markdown",
+    ".rst": "rst",
+    ".r": "r",
+    ".R": "r",
+    ".lua": "lua",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".scala": "scala",
+    ".pl": "perl",
+    ".php": "php",
+    ".ex": "elixir",
+    ".exs": "elixir",
+    ".erl": "erlang",
+    ".hs": "haskell",
+    ".ml": "ocaml",
+    ".clj": "clojure",
+    ".vim": "vim",
+    ".dockerfile": "dockerfile",
+    ".tf": "terraform",
+    ".proto": "protobuf",
+    ".graphql": "graphql",
+    ".gql": "graphql",
+}
+
+# All extensions this viewer handles
+_ALL_EXTENSIONS = {
+    ".txt", ".log", ".csv", ".tsv", ".env", ".gitignore", ".dockerignore",
+    ".editorconfig", ".properties", ".lock",
+} | set(_EXT_TO_LEXER.keys())
+
+
+class TextViewer(BaseViewer):
+    """Displays text files with syntax highlighting."""
+
+    DEFAULT_CSS = """
+    TextViewer {
+        height: 1fr;
+        overflow-y: auto;
+    }
+    TextViewer > Static {
+        width: 1fr;
+    }
+    """
+
+    @staticmethod
+    def supported_extensions() -> set[str]:
+        return _ALL_EXTENSIONS
+
+    @staticmethod
+    def priority() -> int:
+        return -1  # Low priority — catch-all for text
+
+    def compose(self):
+        yield Static(id="text-content")
+
+    async def load_content(self) -> None:
+        widget = self.query_one("#text-content", Static)
+        try:
+            raw = self.path.read_text(errors="replace")
+            lines = raw.split("\n")
+            if len(lines) > MAX_LINES:
+                raw = "\n".join(lines[:MAX_LINES])
+                raw += f"\n\n... truncated at {MAX_LINES:,} lines ..."
+
+            lexer = _EXT_TO_LEXER.get(self.path.suffix.lower())
+            if lexer:
+                content = Syntax(
+                    raw,
+                    lexer,
+                    theme="monokai",
+                    line_numbers=True,
+                    word_wrap=False,
+                )
+            else:
+                content = Text(raw)
+
+            widget.update(content)
+        except Exception as e:
+            widget.update(Text(f"Error reading file: {e}", style="bold red"))

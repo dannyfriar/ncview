@@ -82,6 +82,7 @@ class FileBrowser(Widget):
         ("s", "cycle_sort", "Cycle sort"),
         ("slash", "start_search", "Search"),
         ("e", "open_editor", "Editor"),
+        ("y", "yank_path", "Copy path"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -304,3 +305,24 @@ class FileBrowser(Widget):
         import subprocess
         with self.app.suspend():
             subprocess.call([*shlex.split(editor), str(path)])
+
+    def action_yank_path(self) -> None:
+        """Copy the highlighted file's absolute path to the system clipboard."""
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        abs_path = str(path.resolve())
+        import subprocess
+        try:
+            subprocess.run(["pbcopy"], input=abs_path.encode(), check=True)
+        except FileNotFoundError:
+            # Linux fallback
+            try:
+                subprocess.run(["xclip", "-selection", "clipboard"], input=abs_path.encode(), check=True)
+            except FileNotFoundError:
+                try:
+                    subprocess.run(["xsel", "--clipboard", "--input"], input=abs_path.encode(), check=True)
+                except FileNotFoundError:
+                    self.notify("No clipboard tool found", severity="error")
+                    return
+        self.notify(f"Copied: {abs_path}", severity="information")

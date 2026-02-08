@@ -7,7 +7,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
-from textual.widgets import Footer, Header
+from textual.widgets import Header
 
 from ncview.utils.file_types import registry
 from ncview.viewers.fallback_viewer import FallbackViewer
@@ -17,6 +17,7 @@ from ncview.viewers.text_viewer import TextViewer
 from ncview.widgets.file_browser import DirectoryChanged, FileBrowser, FileSelected
 from ncview.widgets.path_bar import PathBar
 from ncview.widgets.preview_panel import PreviewPanel
+from ncview.widgets.status_bar import StatusBar
 
 # Register viewers
 registry.register(TextViewer)
@@ -56,7 +57,7 @@ class NcviewApp(App):
         yield PathBar(self._start_path, id="path-bar")
         yield FileBrowser(self._start_path, id="browser")
         yield PreviewPanel(id="preview")
-        yield Footer()
+        yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
         browser = self.query_one("#browser", FileBrowser)
@@ -81,6 +82,7 @@ class NcviewApp(App):
         # Hide browser, show preview full-width
         browser.styles.display = "none"
         preview.add_class("visible")
+        self.query_one("#status-bar", StatusBar).mode = "preview"
 
         # Auto-focus the interactive widget inside the viewer
         from textual.widgets import DataTable
@@ -105,6 +107,7 @@ class NcviewApp(App):
         preview.remove_class("visible")
         browser.styles.display = "block"
         browser.query_one("#file-list").focus()
+        self.query_one("#status-bar", StatusBar).mode = "browser"
 
     async def action_close_preview(self) -> None:
         if self._preview_is_open():

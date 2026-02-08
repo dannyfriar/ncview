@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 from enum import Enum
 from pathlib import Path
 
@@ -83,6 +84,7 @@ class FileBrowser(Widget):
         ("slash", "start_search", "Search"),
         ("e", "open_editor", "Editor"),
         ("y", "yank_path", "Copy path"),
+        ("d", "delete", "Delete"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -326,3 +328,39 @@ class FileBrowser(Widget):
                     self.notify("No clipboard tool found", severity="error")
                     return
         self.notify(f"Copied: {abs_path}", severity="information")
+
+    def action_delete(self) -> None:
+        """Prompt to delete the highlighted file or directory."""
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        # Don't allow deleting ".."
+        lv = self.query_one("#file-list", ListView)
+        if lv.highlighted_child and lv.highlighted_child.name == "..":
+            return
+
+        kind = "directory" if path.is_dir() else "file"
+        name = path.name
+
+        from ncview.widgets.confirm_screen import ConfirmScreen
+
+        def _on_result(confirmed: bool) -> None:
+            if not confirmed:
+                return
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                self.notify(f"Deleted {kind}: {name}", severity="information")
+                self._load_directory()
+            except OSError as exc:
+                self.notify(f"Delete failed: {exc}", severity="error")
+
+        self.app.push_screen(
+            ConfirmScreen(
+                title=f"Delete {kind}",
+                message=f"Are you sure you want to delete '{name}'?",
+            ),
+            callback=_on_result,
+        )

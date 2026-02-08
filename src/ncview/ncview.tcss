@@ -2,7 +2,7 @@ Header {
     dock: top;
 }
 
-Footer {
+StatusBar {
     dock: bottom;
 }
 

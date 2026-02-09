@@ -24,6 +24,7 @@ FileBrowser {
     width: 1fr;
     border: solid #2e2f2a;
     border-title-color: #a6e22e;
+    border-subtitle-color: #e6db74;
 }
 
 FileBrowser > DataTable {

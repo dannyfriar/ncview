@@ -138,7 +138,7 @@ class FileBrowser(Widget):
         )
         all_entries = dirs + files
 
-        # Pre-compute sizes on the worker thread to avoid stat() on main thread
+        # Pre-compute sizes and dir item counts on the worker thread
         sizes: dict[str, int] = {}
         for entry in files:
             try:
@@ -196,7 +196,8 @@ class FileBrowser(Widget):
         hidden_label = "shown" if self._show_hidden else "hidden"
         count_dirs = sum(1 for e in entries if e.is_dir())
         count_files = len(entries) - count_dirs
-        self.border_subtitle = f"{count_dirs} dirs, {count_files} files | sort:{sort_label} | hidden:{hidden_label}"
+        total = count_dirs + count_files
+        self.border_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}"
 
         # Post directory changed
         self.post_message(DirectoryChanged(self.current_dir))

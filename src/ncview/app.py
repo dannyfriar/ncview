@@ -12,6 +12,7 @@ from textual.widgets import Header
 from ncview.utils.file_types import registry
 from ncview.viewers.fallback_viewer import FallbackViewer
 from ncview.viewers.json_viewer import JsonViewer
+from ncview.viewers.markdown_viewer import MarkdownViewer
 from ncview.viewers.parquet_viewer import ParquetViewer
 from ncview.viewers.text_viewer import TextViewer
 from ncview.widgets.file_browser import DirectoryChanged, FileBrowser, FileSelected
@@ -23,6 +24,7 @@ from ncview.widgets.status_bar import StatusBar
 registry.register(TextViewer)
 registry.register(ParquetViewer)
 registry.register(JsonViewer)
+registry.register(MarkdownViewer)
 registry.register(FallbackViewer)
 
 

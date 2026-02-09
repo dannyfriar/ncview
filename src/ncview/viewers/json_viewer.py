@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from textual import work
+
 from rich.text import Text
 from textual.binding import Binding
 from textual.widgets import Static, Tree
 
 from ncview.viewers.base import BaseViewer
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 MAX_DEPTH = 50
 MAX_NODES = 50_000
 
@@ -87,16 +88,12 @@ class JsonViewer(BaseViewer):
         yield JsonTree("root", id="json-tree")
 
     async def load_content(self) -> None:
-        tree = self.query_one("#json-tree", JsonTree)
-        info = self.query_one("#json-info", Static)
-        try:
-            size = self.path.stat().st_size
-            if size > MAX_FILE_SIZE:
-                tree.root.set_label(
-                    Text(f"File too large ({size / 1024 / 1024:.1f} MB > 10 MB limit)", style="bold red")
-                )
-                return
+        self._parse_json()
 
+    @work(thread=True, exclusive=True)
+    def _parse_json(self) -> None:
+        """Parse JSON in a background thread to keep UI responsive for large files."""
+        try:
             raw = self.path.read_text(errors="replace")
 
             if self.path.suffix.lower() == ".jsonl":
@@ -104,22 +101,36 @@ class JsonViewer(BaseViewer):
                 data = lines
             else:
                 data = json.loads(raw)
-
-            # Info bar
-            info_text = Text()
-            info_text.append(self.path.name, style="bold")
-            info_text.append("  j/k: move  l: expand  h: collapse  space: toggle", style="dim")
-            info.update(info_text)
-
-            tree.root.set_label(Text(self._describe_type(data), style="bold"))
-            self._node_count = 0
-            self._build_tree(tree.root, data)
-            tree.root.expand()
-            tree.focus()
         except json.JSONDecodeError as e:
-            tree.root.set_label(Text(f"Invalid JSON: {e}", style="bold red"))
+            self.app.call_from_thread(self._show_error, f"Invalid JSON: {e}")
+            return
         except Exception as e:
-            tree.root.set_label(Text(f"Error: {e}", style="bold red"))
+            self.app.call_from_thread(self._show_error, f"Error: {e}")
+            return
+
+        self.app.call_from_thread(self._populate_tree, data)
+
+    def _show_error(self, message: str) -> None:
+        tree = self.query_one("#json-tree", JsonTree)
+        tree.root.set_label(Text(message, style="bold red"))
+
+    def _populate_tree(self, data) -> None:
+        tree = self.query_one("#json-tree", JsonTree)
+        info = self.query_one("#json-info", Static)
+
+        size = self.path.stat().st_size
+        size_str = f"{size / 1024 / 1024:.1f} MB" if size >= 1024 * 1024 else f"{size / 1024:.1f} KB"
+        info_text = Text()
+        info_text.append(self.path.name, style="bold")
+        info_text.append(f"  ({size_str})", style="dim")
+        info_text.append("  j/k: move  l: expand  h: collapse  space: toggle", style="dim")
+        info.update(info_text)
+
+        tree.root.set_label(Text(self._describe_type(data), style="bold"))
+        self._node_count = 0
+        self._build_tree(tree.root, data)
+        tree.root.expand()
+        tree.focus()
 
     def _describe_type(self, data) -> str:
         if isinstance(data, dict):

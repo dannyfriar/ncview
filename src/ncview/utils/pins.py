@@ -40,14 +40,18 @@ def _save_pins(pins: list[Pin]) -> None:
     PINS_FILE.write_text(json.dumps(pins, indent=2) + "\n")
 
 
-def add_pin(path: str, name: str = "") -> None:
-    """Append a resolved absolute path, deduplicate, and save."""
+def add_pin(path: str, name: str = "") -> bool:
+    """Add or overwrite a pin. Returns True if an existing pin was overwritten."""
     resolved = str(Path(path).resolve())
     pins = load_pins()
-    if any(p["path"] == resolved for p in pins):
-        return
+    for i, p in enumerate(pins):
+        if p["path"] == resolved:
+            pins[i] = Pin(path=resolved, name=name)
+            _save_pins(pins)
+            return True
     pins.append(Pin(path=resolved, name=name))
     _save_pins(pins)
+    return False
 
 
 def remove_pin(path: str) -> None:

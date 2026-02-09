@@ -1,4 +1,4 @@
-"""Flat ListView file browser with vim keybindings."""
+"""DataTable-based file browser with vim keybindings and virtual scrolling."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from textual import on, work
 from textual.events import Key
 from textual.message import Message
 from textual.widget import Widget
-from textual.widgets import Input, Label, ListItem, ListView
+from textual.widgets import DataTable, Input
 
 from ncview.utils.file_info import file_icon, human_size
 
@@ -56,15 +56,8 @@ class FileBrowser(Widget):
         height: 1fr;
         width: 1fr;
     }
-    FileBrowser > ListView {
+    FileBrowser > DataTable {
         height: 1fr;
-    }
-    FileBrowser > ListView > ListItem {
-        height: 1;
-        padding: 0 1;
-    }
-    FileBrowser > ListView > ListItem:hover {
-        background: $surface;
     }
     FileBrowser > Input {
         dock: bottom;
@@ -94,16 +87,17 @@ class FileBrowser(Widget):
         self._show_hidden = False
         self._sort_key = SortKey.NAME
         self._search_active = False
+        self._path_map: dict[str, Path] = {}
 
     def compose(self):
-        yield ListView(id="file-list")
+        yield DataTable(id="file-list", cursor_type="row", show_header=False)
         yield Input(placeholder="Search...", id="search-input")
 
     def on_mount(self) -> None:
         self._load_directory()
 
     def on_key(self, event: Key) -> None:
-        """Intercept keys before ListView eats them."""
+        """Intercept keys before DataTable eats them."""
         if self._search_active:
             if event.key == "escape":
                 event.prevent_default()
@@ -168,17 +162,22 @@ class FileBrowser(Widget):
         return path.name.lower()
 
     def _populate_list(self, entries: list[Path], sizes: dict[str, int]) -> None:
-        """Rebuild the list view with current entries."""
+        """Rebuild the DataTable with current entries."""
         self._entries = entries
-        lv = self.query_one("#file-list", ListView)
-        lv.clear()
+        self._path_map.clear()
+        dt = self.query_one("#file-list", DataTable)
+        dt.clear(columns=True)
+
+        dt.add_column("Name", key="name")
+        dt.add_column("Size", key="size")
 
         # Add parent directory entry
         if self.current_dir != Path(self.current_dir.root):
             label = Text()
             label.append("\uf07b ", style="bold #e6db74")
             label.append("..", style="bold #e6db74")
-            lv.append(ListItem(Label(label), name=".."))
+            dt.add_row(label, "", key="..")
+            self._path_map[".."] = self.current_dir.parent
 
         for entry in entries:
             label = Text()
@@ -186,11 +185,12 @@ class FileBrowser(Widget):
             label.append(f"{icon} ")
             if entry.is_dir():
                 label.append(entry.name + "/", style="bold #66d9ef")
+                size_text = ""
             else:
                 label.append(entry.name, style="#f8f8f2")
-                if entry.name in sizes:
-                    label.append(f"  {human_size(sizes[entry.name])}", style="#75715e")
-            lv.append(ListItem(Label(label), name=entry.name))
+                size_text = human_size(sizes[entry.name]) if entry.name in sizes else ""
+            dt.add_row(label, size_text, key=entry.name)
+            self._path_map[entry.name] = entry
 
         sort_label = self._sort_key.value
         hidden_label = "shown" if self._show_hidden else "hidden"
@@ -201,30 +201,31 @@ class FileBrowser(Widget):
         # Post directory changed
         self.post_message(DirectoryChanged(self.current_dir))
 
-        # Auto-highlight first item
-        if lv.children:
-            lv.index = 0
+        # Auto-highlight first row
+        if dt.row_count > 0:
+            dt.move_cursor(row=0)
 
-    @on(ListView.Highlighted)
-    def _on_list_highlighted(self, event: ListView.Highlighted) -> None:
+    @on(DataTable.RowHighlighted)
+    def _on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         path = self._get_highlighted_path()
         if path is not None:
             self.post_message(FileHighlighted(path))
 
-    @on(ListView.Selected)
-    def _on_list_selected(self, event: ListView.Selected) -> None:
-        """Handle Enter key on ListView — enter directory or open file."""
+    @on(DataTable.RowSelected)
+    def _on_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle Enter key on DataTable — enter directory or open file."""
         self.action_enter_or_open()
 
     def _get_highlighted_path(self) -> Path | None:
         """Return the Path of the currently highlighted item."""
-        lv = self.query_one("#file-list", ListView)
-        if lv.highlighted_child is None:
+        dt = self.query_one("#file-list", DataTable)
+        if dt.row_count == 0:
             return None
-        name = lv.highlighted_child.name
-        if name == "..":
-            return self.current_dir.parent
-        return self.current_dir / name
+        try:
+            row_key = dt.coordinate_to_cell_key(dt.cursor_coordinate).row_key.value
+        except Exception:
+            return None
+        return self._path_map.get(row_key)
 
     def _navigate_to(self, path: Path) -> None:
         """Change to a new directory."""
@@ -236,12 +237,12 @@ class FileBrowser(Widget):
     # --- Actions bound to vim keys ---
 
     def action_cursor_down(self) -> None:
-        lv = self.query_one("#file-list", ListView)
-        lv.action_cursor_down()
+        dt = self.query_one("#file-list", DataTable)
+        dt.action_cursor_down()
 
     def action_cursor_up(self) -> None:
-        lv = self.query_one("#file-list", ListView)
-        lv.action_cursor_up()
+        dt = self.query_one("#file-list", DataTable)
+        dt.action_cursor_up()
 
     def action_enter_or_open(self) -> None:
         path = self._get_highlighted_path()
@@ -256,13 +257,13 @@ class FileBrowser(Widget):
         self._navigate_to(self.current_dir.parent)
 
     def action_jump_top(self) -> None:
-        lv = self.query_one("#file-list", ListView)
-        lv.index = 0
+        dt = self.query_one("#file-list", DataTable)
+        dt.move_cursor(row=0)
 
     def action_jump_bottom(self) -> None:
-        lv = self.query_one("#file-list", ListView)
-        if lv.children:
-            lv.index = len(lv.children) - 1
+        dt = self.query_one("#file-list", DataTable)
+        if dt.row_count > 0:
+            dt.move_cursor(row=dt.row_count - 1)
 
     def action_toggle_hidden(self) -> None:
         self._show_hidden = not self._show_hidden
@@ -287,17 +288,23 @@ class FileBrowser(Widget):
         self._finish_search()
         if not query:
             return
-        lv = self.query_one("#file-list", ListView)
-        for i, child in enumerate(lv.children):
-            if child.name and query in child.name.lower():
-                lv.index = i
+        # Check ".." entry first
+        dt = self.query_one("#file-list", DataTable)
+        has_parent = self.current_dir != Path(self.current_dir.root)
+        if has_parent and query in "..":
+            dt.move_cursor(row=0)
+            return
+        offset = 1 if has_parent else 0
+        for i, entry in enumerate(self._entries):
+            if query in entry.name.lower():
+                dt.move_cursor(row=i + offset)
                 break
 
     def _finish_search(self) -> None:
         search_input = self.query_one("#search-input", Input)
         search_input.styles.display = "none"
         self._search_active = False
-        self.query_one("#file-list", ListView).focus()
+        self.query_one("#file-list", DataTable).focus()
 
     def action_open_editor(self) -> None:
         path = self._get_highlighted_path()
@@ -335,8 +342,12 @@ class FileBrowser(Widget):
         if path is None:
             return
         # Don't allow deleting ".."
-        lv = self.query_one("#file-list", ListView)
-        if lv.highlighted_child and lv.highlighted_child.name == "..":
+        dt = self.query_one("#file-list", DataTable)
+        try:
+            row_key = dt.coordinate_to_cell_key(dt.cursor_coordinate).row_key.value
+        except Exception:
+            return
+        if row_key == "..":
             return
 
         kind = "directory" if path.is_dir() else "file"
@@ -364,3 +375,4 @@ class FileBrowser(Widget):
             ),
             callback=_on_result,
         )
+

@@ -30,9 +30,12 @@ def main() -> None:
     if args.command == "pin":
         from ncview.utils.pins import add_pin
         resolved = str(Path(args.path).resolve())
-        add_pin(args.path, name=args.name)
+        overwritten = add_pin(args.path, name=args.name)
         label = f" ({args.name})" if args.name else ""
-        print(f"Pinned: {resolved}{label}")
+        if overwritten:
+            print(f"Updated existing pin: {resolved}{label}")
+        else:
+            print(f"Pinned: {resolved}{label}")
         return
 
     if args.command == "unpin":

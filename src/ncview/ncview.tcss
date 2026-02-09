@@ -26,17 +26,18 @@ FileBrowser {
     border-title-color: #a6e22e;
 }
 
-FileBrowser > ListView {
+FileBrowser > DataTable {
     background: #131411;
-}
-
-FileBrowser > ListView > ListItem {
     color: #f8f8f2;
 }
 
-FileBrowser > ListView > ListItem.-highlight {
+FileBrowser > DataTable > .datatable--cursor {
     background: #3a3b35;
     color: #f8f8f2;
+}
+
+FileBrowser > DataTable > .datatable--hover {
+    background: #2e2f2a;
 }
 
 PreviewPanel {

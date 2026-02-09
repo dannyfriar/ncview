@@ -9,9 +9,9 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import Input, Label, ListItem, ListView, Static
 
-from ncview.utils.pins import Pin, load_pins, remove_pin
+from ncview.utils.pins import Pin, add_pin, load_pins, remove_pin
 
 
 def _pin_label(pin: Pin) -> Text:
@@ -65,6 +65,10 @@ class PinsScreen(ModalScreen[Path | None]):
         height: 1;
         padding: 0 1;
     }
+    PinsScreen > Vertical > .pin-add-field {
+        display: none;
+        margin: 0 0 0 0;
+    }
     PinsScreen > Vertical > #pins-hint {
         width: 1fr;
         content-align: center middle;
@@ -76,31 +80,36 @@ class PinsScreen(ModalScreen[Path | None]):
         ("j", "cursor_down", "Down"),
         ("k", "cursor_up", "Up"),
         ("l", "select_pin", "Select"),
+        ("a", "add_pin", "Add pin"),
         ("d", "delete_pin", "Unpin"),
         ("escape", "cancel", "Cancel"),
         ("q", "cancel", "Cancel"),
+        ("ctrl+c", "quit", "Quit"),
     ]
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, current_dir: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._pins: list[Pin] = []
+        self._current_dir = current_dir
+        self._adding = False
 
     def compose(self) -> ComposeResult:
         self._pins = load_pins()
+        items = [ListItem(Label(_pin_label(pin)), name=pin["path"]) for pin in self._pins]
         with Vertical():
             yield Static("Pinned Directories", id="pins-title")
             if not self._pins:
-                yield Static("No pinned directories.\nUse: ncview pin <path>", id="pins-empty")
-            else:
-                items = []
-                for pin in self._pins:
-                    items.append(ListItem(Label(_pin_label(pin)), name=pin["path"]))
-                yield ListView(*items, id="pins-list")
+                yield Static("No pinned directories yet.", id="pins-empty")
+            yield ListView(*items, id="pins-list")
+            yield Input(placeholder="Directory path", id="pin-add-path", classes="pin-add-field")
+            yield Input(placeholder="Display name (optional, Enter to save)", id="pin-add-name", classes="pin-add-field")
             hint = Text()
             hint.append("j/k", style="bold #66d9ef")
             hint.append(" nav  ", style="#75715e")
             hint.append("Enter/l", style="bold #66d9ef")
             hint.append(" open  ", style="#75715e")
+            hint.append("a", style="bold #66d9ef")
+            hint.append(" add  ", style="#75715e")
             hint.append("d", style="bold #66d9ef")
             hint.append(" unpin  ", style="#75715e")
             hint.append("q/Esc", style="bold #66d9ef")
@@ -121,18 +130,24 @@ class PinsScreen(ModalScreen[Path | None]):
         self.action_select_pin()
 
     def action_cursor_down(self) -> None:
+        if self._adding:
+            return
         try:
             self.query_one("#pins-list", ListView).action_cursor_down()
         except Exception:
             pass
 
     def action_cursor_up(self) -> None:
+        if self._adding:
+            return
         try:
             self.query_one("#pins-list", ListView).action_cursor_up()
         except Exception:
             pass
 
     def action_select_pin(self) -> None:
+        if self._adding:
+            return
         try:
             lv = self.query_one("#pins-list", ListView)
         except Exception:
@@ -146,7 +161,72 @@ class PinsScreen(ModalScreen[Path | None]):
         else:
             self.dismiss(None)
 
+    def action_add_pin(self) -> None:
+        """Show the inline inputs to pin a directory."""
+        if self._adding:
+            return
+        self._adding = True
+        path_inp = self.query_one("#pin-add-path", Input)
+        path_inp.value = str(self._current_dir or "")
+        path_inp.styles.display = "block"
+        name_inp = self.query_one("#pin-add-name", Input)
+        name_inp.value = ""
+        name_inp.styles.display = "block"
+        path_inp.focus()
+
+    @on(Input.Submitted, "#pin-add-path")
+    def _on_path_submitted(self, event: Input.Submitted) -> None:
+        """Tab-like: move focus to the name field on Enter."""
+        self.query_one("#pin-add-name", Input).focus()
+
+    @on(Input.Submitted, "#pin-add-name")
+    def _on_name_submitted(self, event: Input.Submitted) -> None:
+        path_str = self.query_one("#pin-add-path", Input).value.strip()
+        if not path_str:
+            self._finish_add()
+            return
+        path = Path(path_str).resolve()
+        if not path.is_dir():
+            self.app.notify(f"Not a directory: {path}", severity="error")
+            return
+        name = event.value.strip()
+        overwritten = add_pin(str(path), name=name)
+        if overwritten:
+            self.app.notify(f"Updated pin: {path}", severity="information")
+        else:
+            self.app.notify(f"Pinned: {path}", severity="information")
+        self._finish_add()
+        self._rebuild_list()
+
+    def _finish_add(self) -> None:
+        self._adding = False
+        self.query_one("#pin-add-path", Input).styles.display = "none"
+        self.query_one("#pin-add-name", Input).styles.display = "none"
+        try:
+            self.query_one("#pins-list", ListView).focus()
+        except Exception:
+            pass
+
+    def _rebuild_list(self) -> None:
+        """Reload pins and rebuild the ListView."""
+        self._pins = load_pins()
+        # Remove the empty message if present
+        try:
+            self.query_one("#pins-empty", Static).remove()
+        except Exception:
+            pass
+        lv = self.query_one("#pins-list", ListView)
+        idx = lv.index or 0
+        lv.clear()
+        for pin in self._pins:
+            lv.append(ListItem(Label(_pin_label(pin)), name=pin["path"]))
+        if lv.children:
+            lv.index = min(idx, len(lv.children) - 1)
+            lv.focus()
+
     def action_delete_pin(self) -> None:
+        if self._adding:
+            return
         try:
             lv = self.query_one("#pins-list", ListView)
         except Exception:
@@ -191,4 +271,10 @@ class PinsScreen(ModalScreen[Path | None]):
         )
 
     def action_cancel(self) -> None:
+        if self._adding:
+            self._finish_add()
+            return
         self.dismiss(None)
+
+    def action_quit(self) -> None:
+        self.app.exit()

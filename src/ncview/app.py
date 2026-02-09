@@ -139,12 +139,13 @@ class NcviewApp(App):
             return
         from ncview.widgets.pins_screen import PinsScreen
 
+        browser = self.query_one("#browser", FileBrowser)
+
         def _on_pin_selected(path: Path | None) -> None:
             if path is not None:
-                browser = self.query_one("#browser", FileBrowser)
                 browser._navigate_to(path)
 
-        self.push_screen(PinsScreen(), callback=_on_pin_selected)
+        self.push_screen(PinsScreen(current_dir=browser.current_dir), callback=_on_pin_selected)
 
     def action_open_ipython(self) -> None:
         """Open an IPython shell in the current browsed directory."""

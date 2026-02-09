@@ -46,6 +46,7 @@ class ConfirmScreen(ModalScreen[bool]):
         ("y", "confirm", "Yes"),
         ("n", "cancel", "No"),
         ("escape", "cancel", "Cancel"),
+        ("ctrl+c", "quit", "Quit"),
     ]
 
     def __init__(self, title: str, message: str, **kwargs) -> None:
@@ -69,3 +70,6 @@ class ConfirmScreen(ModalScreen[bool]):
 
     def action_cancel(self) -> None:
         self.dismiss(False)
+
+    def action_quit(self) -> None:
+        self.app.exit()

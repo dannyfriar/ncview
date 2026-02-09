@@ -2,6 +2,7 @@
 
 Terminal file browser with vim keybindings, inspired by [ncdu](https://dev.yorhel.nl/ncdu). Built with [Textual](https://textual.textualize.io/), [Polars](https://pola.rs/), and [PyArrow](https://arrow.apache.org/docs/python/).
 
+[![PyPI](https://img.shields.io/pypi/v/ncview)](https://pypi.org/project/ncview/)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 
 ## Features

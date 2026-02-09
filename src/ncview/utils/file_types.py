@@ -34,8 +34,7 @@ class ViewerRegistry:
                     best_priority = p
 
         if best is None:
-            # Try text viewer for extensionless files that look like text
-            if not ext and _is_likely_text(path):
+            if _is_likely_text(path):
                 from ncview.viewers.text_viewer import TextViewer
                 return TextViewer
             from ncview.viewers.fallback_viewer import FallbackViewer

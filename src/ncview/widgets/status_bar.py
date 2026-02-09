@@ -33,8 +33,8 @@ class StatusBar(Widget):
     ]
 
     _PREVIEW_HINTS = [
-        ("Nav", [("j/k", "scroll"), ("\u2303d/\u2303u", "page")]),
-        ("Back", [("h/Esc", "close")]),
+        ("Nav", [("j/k", "scroll"), ("\u2303d/\u2303u", "page"), ("g/G", "top/end")]),
+        ("Actions", [("e", "edit"), ("h/Esc", "close")]),
         ("Tabs", [("1/2/3", "switch")]),
         ("App", [("q", "quit")]),
     ]

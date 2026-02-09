@@ -45,6 +45,9 @@ class NcviewApp(App):
         ("k", "preview_scroll_up", "Up"),
         ("ctrl+d", "preview_page_down", "Page down"),
         ("ctrl+u", "preview_page_up", "Page up"),
+        ("g", "preview_scroll_top", "Top"),
+        ("G", "preview_scroll_bottom", "Bottom"),
+        ("e", "preview_open_editor", "Editor"),
         ("1", "viewer_tab('1')", "Tab 1"),
         ("2", "viewer_tab('2')", "Tab 2"),
         ("3", "viewer_tab('3')", "Tab 3"),
@@ -53,6 +56,7 @@ class NcviewApp(App):
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._start_path = start_path or Path.cwd()
+        self._preview_path: Path | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -80,13 +84,14 @@ class NcviewApp(App):
         browser = self.query_one("#browser", FileBrowser)
 
         await preview.show_file(event.path)
+        self._preview_path = event.path
 
         # Hide browser, show preview full-width
         browser.styles.display = "none"
         preview.add_class("visible")
         self.query_one("#status-bar", StatusBar).mode = "preview"
 
-        # Auto-focus the interactive widget inside the viewer
+        # Focus the right widget so vim keys work
         from textual.widgets import DataTable
         from ncview.viewers.json_viewer import JsonTree
         try:
@@ -97,7 +102,7 @@ class NcviewApp(App):
                 jt = preview.query_one(JsonTree)
                 jt.focus()
             except Exception:
-                pass
+                preview.query_one("#preview-scroll", VerticalScroll).focus()
 
     async def _close_preview(self) -> None:
         """Return from preview to browser."""
@@ -105,6 +110,7 @@ class NcviewApp(App):
         browser = self.query_one("#browser", FileBrowser)
 
         await preview.clear()
+        self._preview_path = None
 
         preview.remove_class("visible")
         browser.styles.display = "block"
@@ -136,6 +142,25 @@ class NcviewApp(App):
     def action_preview_page_up(self) -> None:
         if self._preview_is_open():
             self.query_one("#preview-scroll", VerticalScroll).scroll_page_up()
+
+    def action_preview_scroll_top(self) -> None:
+        if self._preview_is_open():
+            self.query_one("#preview-scroll", VerticalScroll).scroll_home()
+
+    def action_preview_scroll_bottom(self) -> None:
+        if self._preview_is_open():
+            self.query_one("#preview-scroll", VerticalScroll).scroll_end()
+
+    async def action_preview_open_editor(self) -> None:
+        if not self._preview_is_open() or self._preview_path is None:
+            return
+        import os
+        import shlex
+        import subprocess
+        editor = os.environ.get("EDITOR", "vim")
+        with self.suspend():
+            subprocess.call([*shlex.split(editor), str(self._preview_path)])
+        await self._close_preview()
 
     def action_viewer_tab(self, tab_num: str) -> None:
         """Switch parquet viewer tabs with 1/2/3 keys."""

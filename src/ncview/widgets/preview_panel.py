@@ -30,7 +30,9 @@ class PreviewPanel(Widget):
         self._current_path: Path | None = None
 
     def compose(self):
-        yield VerticalScroll(id="preview-scroll")
+        vs = VerticalScroll(id="preview-scroll")
+        vs.can_focus = True
+        yield vs
 
     async def show_file(self, path: Path) -> None:
         """Load the appropriate viewer for the given file."""

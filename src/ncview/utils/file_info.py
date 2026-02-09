@@ -20,25 +20,64 @@ def human_size(size: int | float) -> str:
 
 
 def file_icon(path: Path) -> str:
-    """Return a simple icon character for a path."""
+    """Return a Nerd Font icon for a path."""
     if path.is_dir():
-        return "\U0001f4c1"  # folder
+        return "\uf07b"  # nf-fa-folder
     ext = path.suffix.lower()
-    if ext == ".py":
-        return "\U0001f40d"  # snake (Python)
-    if ext == ".rs":
-        return "\u2699\ufe0f"  # gear (Rust)
-    if ext in {".js", ".ts", ".go", ".c", ".cpp", ".java"}:
-        return "\U0001f4c4"  # code
-    if ext in {".parquet", ".csv", ".tsv", ".xlsx"}:
-        return "\U0001f4ca"  # data
-    if ext in {".json", ".yaml", ".yml", ".toml", ".xml"}:
-        return "\u2699"  # config
-    if ext in {".md", ".txt", ".rst", ".log"}:
-        return "\U0001f4dd"  # text
-    if ext in {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}:
-        return "\U0001f5bc"  # image
-    return "\U0001f4c3"  # generic file
+    icon = _ICON_MAP.get(ext)
+    if icon:
+        return icon
+    if ext in _CODE_EXTS:
+        return "\uf121"  # nf-fa-code
+    return "\uf016"  # nf-fa-file_o
+
+
+_ICON_MAP: dict[str, str] = {
+    # Languages
+    ".py": "\ue73c",  # nf-dev-python
+    ".rs": "\ue7a8",  # nf-dev-rust
+    ".js": "\ue74e",  # nf-dev-javascript
+    ".ts": "\ue628",  # nf-seti-typescript
+    ".go": "\ue724",  # nf-seti-go
+    ".c": "\ue61e",  # nf-custom-c
+    ".cpp": "\ue61d",  # nf-custom-cpp
+    ".java": "\ue738",  # nf-dev-java
+    ".rb": "\ue739",  # nf-dev-ruby
+    ".lua": "\ue620",  # nf-seti-lua
+    ".sh": "\uf489",  # nf-oct-terminal
+    ".bash": "\uf489",
+    ".zsh": "\uf489",
+    # Data
+    ".json": "\ue60b",  # nf-seti-json
+    ".yaml": "\uf481",  # nf-oct-file_yaml
+    ".yml": "\uf481",
+    ".toml": "\uf013",  # nf-fa-cog
+    ".xml": "\uf1c0",  # nf-fa-database
+    ".csv": "\uf1c0",
+    ".tsv": "\uf1c0",
+    ".parquet": "\uf1c0",
+    ".xlsx": "\uf1c0",
+    # Docs
+    ".md": "\ue73e",  # nf-dev-markdown
+    ".markdown": "\ue73e",
+    ".txt": "\uf0f6",  # nf-fa-file_text_o
+    ".rst": "\uf0f6",
+    ".log": "\uf0f6",
+    # Images
+    ".png": "\uf1c5",  # nf-fa-file_image_o
+    ".jpg": "\uf1c5",
+    ".jpeg": "\uf1c5",
+    ".gif": "\uf1c5",
+    ".svg": "\uf1c5",
+    ".webp": "\uf1c5",
+    # Config / infra
+    ".env": "\uf023",  # nf-fa-lock
+    ".gitignore": "\ue702",  # nf-dev-git
+    ".dockerignore": "\ue7b0",  # nf-dev-docker
+    "Dockerfile": "\ue7b0",
+}
+
+_CODE_EXTS = {".h", ".hpp", ".cs", ".swift", ".kt", ".scala", ".r", ".m", ".pl"}
 
 
 def file_metadata(path: Path) -> dict[str, str]:

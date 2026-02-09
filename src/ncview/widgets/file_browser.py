@@ -176,8 +176,8 @@ class FileBrowser(Widget):
         # Add parent directory entry
         if self.current_dir != Path(self.current_dir.root):
             label = Text()
-            label.append("\U0001f4c1 ", style="bold")
-            label.append("..", style="bold yellow")
+            label.append("\uf07b ", style="bold #e6db74")
+            label.append("..", style="bold #e6db74")
             lv.append(ListItem(Label(label), name=".."))
 
         for entry in entries:
@@ -185,11 +185,11 @@ class FileBrowser(Widget):
             icon = file_icon(entry)
             label.append(f"{icon} ")
             if entry.is_dir():
-                label.append(entry.name + "/", style="bold blue")
+                label.append(entry.name + "/", style="bold #66d9ef")
             else:
-                label.append(entry.name)
+                label.append(entry.name, style="#f8f8f2")
                 if entry.name in sizes:
-                    label.append(f"  {human_size(sizes[entry.name])}", style="dim")
+                    label.append(f"  {human_size(sizes[entry.name])}", style="#75715e")
             lv.append(ListItem(Label(label), name=entry.name))
 
         sort_label = self._sort_key.value

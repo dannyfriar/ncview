@@ -19,13 +19,14 @@ class ConfirmScreen(ModalScreen[bool]):
     ConfirmScreen > Vertical {
         width: 60;
         height: auto;
-        border: thick $error;
-        background: $surface;
+        border: thick #f92672;
+        background: #1a1b18;
+        color: #f8f8f2;
         padding: 1 2;
     }
     ConfirmScreen > Vertical > #confirm-title {
         text-style: bold;
-        color: $error;
+        color: #f92672;
         width: 1fr;
         content-align: center middle;
     }
@@ -37,7 +38,7 @@ class ConfirmScreen(ModalScreen[bool]):
     ConfirmScreen > Vertical > #confirm-hint {
         width: 1fr;
         content-align: center middle;
-        color: $text-muted;
+        color: #75715e;
     }
     """
 
@@ -57,10 +58,10 @@ class ConfirmScreen(ModalScreen[bool]):
             yield Static(self._title, id="confirm-title")
             yield Static(self._message, id="confirm-message")
             hint = Text()
-            hint.append("y", style="bold cyan")
-            hint.append(" yes  ", style="dim")
-            hint.append("n/Esc", style="bold cyan")
-            hint.append(" no", style="dim")
+            hint.append("y", style="bold #66d9ef")
+            hint.append(" yes  ", style="#75715e")
+            hint.append("n/Esc", style="bold #66d9ef")
+            hint.append(" no", style="#75715e")
             yield Static(hint, id="confirm-hint")
 
     def action_confirm(self) -> None:

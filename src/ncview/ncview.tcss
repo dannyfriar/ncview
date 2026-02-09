@@ -1,5 +1,13 @@
+/* Monokai-inspired color scheme */
+Screen {
+    background: #131411;
+    color: #f8f8f2;
+}
+
 Header {
     dock: top;
+    background: #0d0e0c;
+    color: #a6e22e;
 }
 
 StatusBar {
@@ -8,20 +16,34 @@ StatusBar {
 
 PathBar {
     dock: top;
+    background: #0d0e0c;
 }
 
 FileBrowser {
     height: 1fr;
     width: 1fr;
-    border: solid $primary;
-    border-title-color: $text;
+    border: solid #2e2f2a;
+    border-title-color: #a6e22e;
+}
+
+FileBrowser > ListView {
+    background: #131411;
+}
+
+FileBrowser > ListView > ListItem {
+    color: #f8f8f2;
+}
+
+FileBrowser > ListView > ListItem.-highlight {
+    background: #3a3b35;
+    color: #f8f8f2;
 }
 
 PreviewPanel {
     height: 1fr;
     width: 1fr;
-    border: solid $secondary;
-    border-title-color: $text;
+    border: solid #2e2f2a;
+    border-title-color: #66d9ef;
     display: none;
 }
 

@@ -15,6 +15,8 @@ from ncview.viewers.json_viewer import JsonViewer
 from ncview.viewers.markdown_viewer import MarkdownViewer
 from ncview.viewers.parquet_viewer import ParquetViewer
 from ncview.viewers.text_viewer import TextViewer
+from ncview.viewers.toml_viewer import TomlViewer
+from ncview.viewers.yaml_viewer import YamlViewer
 from ncview.widgets.file_browser import DirectoryChanged, FileBrowser, FileSelected
 from ncview.widgets.path_bar import PathBar
 from ncview.widgets.preview_panel import PreviewPanel
@@ -25,6 +27,8 @@ registry.register(TextViewer)
 registry.register(ParquetViewer)
 registry.register(JsonViewer)
 registry.register(MarkdownViewer)
+registry.register(YamlViewer)
+registry.register(TomlViewer)
 registry.register(FallbackViewer)
 
 
@@ -49,6 +53,7 @@ class NcviewApp(App):
         ("G", "preview_scroll_bottom", "Bottom"),
         ("e", "preview_open_editor", "Editor"),
         ("p", "show_pins", "Pins"),
+        ("i", "open_ipython", "IPython"),
         ("1", "viewer_tab('1')", "Tab 1"),
         ("2", "viewer_tab('2')", "Tab 2"),
         ("3", "viewer_tab('3')", "Tab 3"),
@@ -140,6 +145,20 @@ class NcviewApp(App):
                 browser._navigate_to(path)
 
         self.push_screen(PinsScreen(), callback=_on_pin_selected)
+
+    def action_open_ipython(self) -> None:
+        """Open an IPython shell in the current browsed directory."""
+        if self._preview_is_open():
+            return
+        import shutil
+        import subprocess
+        ipython = shutil.which("ipython")
+        if not ipython:
+            self.notify("ipython not found on PATH", severity="error")
+            return
+        browser = self.query_one("#browser", FileBrowser)
+        with self.suspend():
+            subprocess.call([ipython], cwd=str(browser.current_dir))
 
     def action_preview_scroll_down(self) -> None:
         if self._preview_is_open():

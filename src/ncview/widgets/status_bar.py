@@ -15,7 +15,8 @@ class StatusBar(Widget):
     StatusBar {
         dock: bottom;
         height: 1;
-        background: $primary-background;
+        background: #0d0e0c;
+        color: #f8f8f2;
         padding: 0 1;
     }
     StatusBar > Static {
@@ -27,7 +28,7 @@ class StatusBar(Widget):
 
     _BROWSER_HINTS = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("y", "copy"), ("d", "delete"), ("p", "pins")]),
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("y", "copy"), ("d", "delete"), ("p", "pins"), ("i", "ipython")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
         ("App", [("q", "quit")]),
     ]
@@ -53,13 +54,13 @@ class StatusBar(Widget):
         text = Text()
         for i, (section, keys) in enumerate(hints):
             if i > 0:
-                text.append(" \u2502 ", style="dim")
-            text.append(f"{section}: ", style="bold")
+                text.append(" \u2502 ", style="#75715e")
+            text.append(f"{section}: ", style="bold #f8f8f2")
             for j, (key, desc) in enumerate(keys):
                 if j > 0:
                     text.append("  ")
-                text.append(key, style="bold cyan")
-                text.append(f" {desc}", style="dim")
+                text.append(key, style="bold #66d9ef")
+                text.append(f" {desc}", style="#75715e")
         try:
             self.query_one("#status-text", Static).update(text)
         except Exception:

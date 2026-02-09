@@ -17,13 +17,13 @@ from ncview.utils.pins import Pin, load_pins, remove_pin
 def _pin_label(pin: Pin) -> Text:
     """Build a Rich label for a pin entry."""
     label = Text()
-    label.append("\U0001f4cc ", style="bold")
+    label.append("\uf08d ", style="bold #fd971f")
     if pin["name"]:
-        label.append(pin["name"], style="bold")
-        label.append("  ", style="dim")
-        label.append(pin["path"], style="dim")
+        label.append(pin["name"], style="bold #e6db74")
+        label.append("  ", style="#75715e")
+        label.append(pin["path"], style="#75715e")
     else:
-        label.append(pin["path"], style="bold blue")
+        label.append(pin["path"], style="bold #66d9ef")
     return label
 
 
@@ -38,13 +38,14 @@ class PinsScreen(ModalScreen[Path | None]):
         width: 70;
         height: auto;
         max-height: 80%;
-        border: thick $accent;
-        background: $surface;
+        border: thick #ae81ff;
+        background: #1a1b18;
+        color: #f8f8f2;
         padding: 1 2;
     }
     PinsScreen > Vertical > #pins-title {
         text-style: bold;
-        color: $accent;
+        color: #ae81ff;
         width: 1fr;
         content-align: center middle;
     }
@@ -52,12 +53,13 @@ class PinsScreen(ModalScreen[Path | None]):
         width: 1fr;
         content-align: center middle;
         margin: 1 0;
-        color: $text-muted;
+        color: #75715e;
     }
     PinsScreen > Vertical > ListView {
         height: auto;
         max-height: 20;
         margin: 1 0;
+        background: #1a1b18;
     }
     PinsScreen > Vertical > ListView > ListItem {
         height: 1;
@@ -66,7 +68,7 @@ class PinsScreen(ModalScreen[Path | None]):
     PinsScreen > Vertical > #pins-hint {
         width: 1fr;
         content-align: center middle;
-        color: $text-muted;
+        color: #75715e;
     }
     """
 
@@ -95,14 +97,14 @@ class PinsScreen(ModalScreen[Path | None]):
                     items.append(ListItem(Label(_pin_label(pin)), name=pin["path"]))
                 yield ListView(*items, id="pins-list")
             hint = Text()
-            hint.append("j/k", style="bold cyan")
-            hint.append(" nav  ", style="dim")
-            hint.append("Enter/l", style="bold cyan")
-            hint.append(" open  ", style="dim")
-            hint.append("d", style="bold cyan")
-            hint.append(" unpin  ", style="dim")
-            hint.append("q/Esc", style="bold cyan")
-            hint.append(" close", style="dim")
+            hint.append("j/k", style="bold #66d9ef")
+            hint.append(" nav  ", style="#75715e")
+            hint.append("Enter/l", style="bold #66d9ef")
+            hint.append(" open  ", style="#75715e")
+            hint.append("d", style="bold #66d9ef")
+            hint.append(" unpin  ", style="#75715e")
+            hint.append("q/Esc", style="bold #66d9ef")
+            hint.append(" close", style="#75715e")
             yield Static(hint, id="pins-hint")
 
     def on_mount(self) -> None:

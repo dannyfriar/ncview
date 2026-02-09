@@ -24,7 +24,11 @@ def file_icon(path: Path) -> str:
     if path.is_dir():
         return "\U0001f4c1"  # folder
     ext = path.suffix.lower()
-    if ext in {".py", ".js", ".ts", ".rs", ".go", ".c", ".cpp", ".java"}:
+    if ext == ".py":
+        return "\U0001f40d"  # snake (Python)
+    if ext == ".rs":
+        return "\u2699\ufe0f"  # gear (Rust)
+    if ext in {".js", ".ts", ".go", ".c", ".cpp", ".java"}:
         return "\U0001f4c4"  # code
     if ext in {".parquet", ".csv", ".tsv", ".xlsx"}:
         return "\U0001f4ca"  # data

@@ -48,6 +48,7 @@ class NcviewApp(App):
         ("g", "preview_scroll_top", "Top"),
         ("G", "preview_scroll_bottom", "Bottom"),
         ("e", "preview_open_editor", "Editor"),
+        ("p", "show_pins", "Pins"),
         ("1", "viewer_tab('1')", "Tab 1"),
         ("2", "viewer_tab('2')", "Tab 2"),
         ("3", "viewer_tab('3')", "Tab 3"),
@@ -127,6 +128,19 @@ class NcviewApp(App):
             await self._close_preview()
         # If preview is not open, let the FileBrowser handle h/backspace itself
 
+    def action_show_pins(self) -> None:
+        """Show the pinned directories popup."""
+        if self._preview_is_open():
+            return
+        from ncview.widgets.pins_screen import PinsScreen
+
+        def _on_pin_selected(path: Path | None) -> None:
+            if path is not None:
+                browser = self.query_one("#browser", FileBrowser)
+                browser._navigate_to(path)
+
+        self.push_screen(PinsScreen(), callback=_on_pin_selected)
+
     def action_preview_scroll_down(self) -> None:
         if self._preview_is_open():
             self.query_one("#preview-scroll", VerticalScroll).scroll_down()
@@ -190,17 +204,13 @@ class NcviewApp(App):
         path_bar.update_path(event.path)
 
 
-def run() -> None:
+def run(start: str = ".") -> None:
     """Run the ncview app."""
-    import argparse
-
-    parser = argparse.ArgumentParser(prog="ncview", description="Terminal file browser with vim keybindings")
-    parser.add_argument("path", nargs="?", default=".", help="Directory to browse (default: current directory)")
-    args = parser.parse_args()
-
-    path = Path(args.path).resolve()
+    path = Path(start).resolve()
     if not path.exists():
-        parser.error(f"{path} does not exist")
+        import sys
+        print(f"Error: {path} does not exist", file=sys.stderr)
+        sys.exit(1)
     if path.is_file():
         path = path.parent
     app = NcviewApp(start_path=path)

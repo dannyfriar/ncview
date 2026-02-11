@@ -9,39 +9,46 @@ from textual.widgets import Static
 
 
 class StatusBar(Widget):
-    """Compact footer showing keybindings grouped by category."""
+    """Two-line footer showing keybindings grouped by category."""
 
     DEFAULT_CSS = """
     StatusBar {
         dock: bottom;
-        height: 1;
+        height: 2;
         background: #0d0e0c;
         color: #f8f8f2;
         padding: 0 1;
     }
     StatusBar > Static {
         width: 1fr;
+        height: 1;
     }
     """
 
     mode = reactive("browser")
 
-    _BROWSER_HINTS = [
+    _BROWSER_LINE1 = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("t", "touch"), ("y", "copy"), ("d", "delete"), ("p", "pins"), ("i", "ipython")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
-        ("App", [("q", "quit")]),
+        ("App", [("p", "pins"), ("i", "ipython"), ("q", "quit")]),
     ]
 
-    _PREVIEW_HINTS = [
+    _BROWSER_LINE2 = [
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy"), ("d", "delete")]),
+    ]
+
+    _PREVIEW_LINE1 = [
         ("Nav", [("j/k", "scroll"), ("\u2303d/\u2303u", "page"), ("g/G", "top/end")]),
-        ("Actions", [("e", "edit"), ("h/Esc", "close")]),
         ("Tabs", [("1/2/3", "switch")]),
-        ("App", [("q", "quit")]),
+    ]
+
+    _PREVIEW_LINE2 = [
+        ("Actions", [("e", "edit"), ("h/Esc", "close"), ("q", "quit")]),
     ]
 
     def compose(self):
-        yield Static(id="status-text")
+        yield Static(id="status-line1")
+        yield Static(id="status-line2")
 
     def on_mount(self) -> None:
         self._render_hints()
@@ -49,8 +56,8 @@ class StatusBar(Widget):
     def watch_mode(self) -> None:
         self._render_hints()
 
-    def _render_hints(self) -> None:
-        hints = self._PREVIEW_HINTS if self.mode == "preview" else self._BROWSER_HINTS
+    @staticmethod
+    def _build_line(hints: list) -> Text:
         text = Text()
         for i, (section, keys) in enumerate(hints):
             if i > 0:
@@ -61,7 +68,15 @@ class StatusBar(Widget):
                     text.append("  ")
                 text.append(key, style="bold #66d9ef")
                 text.append(f" {desc}", style="#75715e")
+        return text
+
+    def _render_hints(self) -> None:
+        if self.mode == "preview":
+            line1, line2 = self._PREVIEW_LINE1, self._PREVIEW_LINE2
+        else:
+            line1, line2 = self._BROWSER_LINE1, self._BROWSER_LINE2
         try:
-            self.query_one("#status-text", Static).update(text)
+            self.query_one("#status-line1", Static).update(self._build_line(line1))
+            self.query_one("#status-line2", Static).update(self._build_line(line2))
         except Exception:
             pass

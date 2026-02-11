@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import subprocess
 from enum import Enum
 from pathlib import Path
 
@@ -80,6 +81,8 @@ class FileBrowser(Widget):
         ("y", "yank_path", "Copy path"),
         ("d", "delete", "Delete"),
         ("t", "touch_file", "Touch"),
+        ("r", "rename", "Rename"),
+        ("M", "mkdir", "Mkdir"),  # noqa: E741
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -91,6 +94,9 @@ class FileBrowser(Widget):
         self._search_active = False
         self._editor_active = False
         self._touch_active = False
+        self._rename_active = False
+        self._rename_path: Path | None = None
+        self._mkdir_active = False
         self._path_map: dict[str, Path] = {}
 
     def compose(self):
@@ -98,6 +104,8 @@ class FileBrowser(Widget):
         yield Input(placeholder="Search...", id="search-input")
         yield Input(placeholder="File path to edit...", id="editor-input")
         yield Input(placeholder="New file name...", id="touch-input")
+        yield Input(placeholder="Rename to...", id="rename-input")
+        yield Input(placeholder="New directory name...", id="mkdir-input")
 
     def on_mount(self) -> None:
         self._load_directory()
@@ -121,6 +129,18 @@ class FileBrowser(Widget):
                 event.prevent_default()
                 event.stop()
                 self._finish_touch()
+            return
+        if self._rename_active:
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self._finish_rename()
+            return
+        if self._mkdir_active:
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self._finish_mkdir()
             return
         if event.key == "backspace":
             event.prevent_default()
@@ -193,9 +213,45 @@ class FileBrowser(Widget):
             except OSError:
                 pass
 
-        self.app.call_from_thread(self._populate_list, all_entries, sizes)
+        # Git status — only if we're in a git repo, with a timeout
+        git_status = self._get_git_status()
 
-    def _populate_list(self, entries: list[Path], sizes: dict[str, int]) -> None:
+        self.app.call_from_thread(self._populate_list, all_entries, sizes, git_status)
+
+    def _get_git_status(self) -> dict[str, str]:
+        """Get git status for files in the current directory. Returns empty dict if not a repo."""
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain", "-uall", "."],
+                cwd=str(self.current_dir),
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if result.returncode != 0:
+                return {}
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return {}
+
+        status_map: dict[str, str] = {}
+        for line in result.stdout.splitlines():
+            if len(line) < 4:
+                continue
+            xy = line[:2]
+            filepath = line[3:]
+            # Strip leading quotes from paths with special chars
+            if filepath.startswith('"') and filepath.endswith('"'):
+                filepath = filepath[1:-1]
+            # Only care about direct children of current dir
+            name = filepath.split("/")[0]
+            if name not in status_map:
+                status_map[name] = xy
+            else:
+                # If a dir has mixed statuses, mark as modified
+                status_map[name] = " M"
+        return status_map
+
+    def _populate_list(self, entries: list[Path], sizes: dict[str, int], git_status: dict[str, str] | None = None) -> None:
         """Rebuild the DataTable with current entries."""
         self._entries = entries
         self._path_map.clear()
@@ -215,6 +271,21 @@ class FileBrowser(Widget):
 
         for entry in entries:
             label = Text()
+            # Git status marker
+            if git_status and entry.name in git_status:
+                xy = git_status[entry.name]
+                if xy == "??":
+                    label.append("? ", style="bold #a6e22e")
+                elif xy[0] in "MADRC":
+                    label.append("+ ", style="bold #a6e22e")
+                elif xy[1] == "M":
+                    label.append("~ ", style="bold #fd971f")
+                elif xy[1] == "D":
+                    label.append("- ", style="bold #f92672")
+                else:
+                    label.append("* ", style="bold #ae81ff")
+            elif git_status is not None:
+                label.append("  ")
             icon = file_icon(entry)
             label.append(f"{icon} ")
             if entry.is_dir():
@@ -346,7 +417,6 @@ class FileBrowser(Widget):
         if path is None or path.is_dir():
             return
         editor = os.environ.get("EDITOR", "vim")
-        import subprocess
         with self.app.suspend():
             subprocess.call([*shlex.split(editor), str(path)])
 
@@ -369,7 +439,6 @@ class FileBrowser(Widget):
             self._navigate_to(path)
             return
         editor = os.environ.get("EDITOR", "vim")
-        import subprocess
         with self.app.suspend():
             subprocess.call([*shlex.split(editor), str(path)])
 
@@ -406,6 +475,82 @@ class FileBrowser(Widget):
     def _finish_touch(self) -> None:
         self._touch_active = False
         self.query_one("#touch-input", Input).styles.display = "none"
+        self.query_one("#file-list", DataTable).focus()
+
+    def action_rename(self) -> None:
+        """Rename the highlighted file or directory."""
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        # Don't allow renaming ".."
+        dt = self.query_one("#file-list", DataTable)
+        try:
+            row_key = dt.coordinate_to_cell_key(dt.cursor_coordinate).row_key.value
+        except Exception:
+            return
+        if row_key == "..":
+            return
+        self._rename_active = True
+        self._rename_path = path
+        rename_input = self.query_one("#rename-input", Input)
+        rename_input.value = path.name
+        rename_input.styles.display = "block"
+        rename_input.focus()
+
+    @on(Input.Submitted, "#rename-input")
+    def _on_rename_submitted(self, event: Input.Submitted) -> None:
+        new_name = event.value.strip()
+        old_path = self._rename_path
+        self._finish_rename()
+        if not new_name or old_path is None:
+            return
+        if "/" in new_name or "\\" in new_name:
+            self.notify("Name cannot contain path separators", severity="error")
+            return
+        new_path = old_path.parent / new_name
+        if new_path.exists():
+            self.notify(f"Already exists: {new_name}", severity="warning")
+            return
+        try:
+            old_path.rename(new_path)
+            self.notify(f"Renamed to: {new_name}", severity="information")
+            self._load_directory()
+        except OSError as exc:
+            self.notify(f"Rename failed: {exc}", severity="error")
+
+    def _finish_rename(self) -> None:
+        self._rename_active = False
+        self._rename_path = None
+        self.query_one("#rename-input", Input).styles.display = "none"
+        self.query_one("#file-list", DataTable).focus()
+
+    def action_mkdir(self) -> None:
+        self._mkdir_active = True
+        mkdir_input = self.query_one("#mkdir-input", Input)
+        mkdir_input.value = ""
+        mkdir_input.styles.display = "block"
+        mkdir_input.focus()
+
+    @on(Input.Submitted, "#mkdir-input")
+    def _on_mkdir_submitted(self, event: Input.Submitted) -> None:
+        dir_name = event.value.strip()
+        self._finish_mkdir()
+        if not dir_name:
+            return
+        new_path = self.current_dir / dir_name
+        if new_path.exists():
+            self.notify(f"Already exists: {dir_name}", severity="warning")
+            return
+        try:
+            new_path.mkdir(parents=True)
+            self.notify(f"Created: {dir_name}/", severity="information")
+            self._load_directory()
+        except OSError as exc:
+            self.notify(f"Mkdir failed: {exc}", severity="error")
+
+    def _finish_mkdir(self) -> None:
+        self._mkdir_active = False
+        self.query_one("#mkdir-input", Input).styles.display = "none"
         self.query_one("#file-list", DataTable).focus()
 
     def action_yank_path(self) -> None:

@@ -10,6 +10,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Header
 
 from ncview.utils.file_types import registry
+from ncview.utils.history import add_to_history
 from ncview.utils.pins import add_pin
 from ncview.viewers.csv_viewer import CsvViewer
 from ncview.viewers.fallback_viewer import FallbackViewer
@@ -62,6 +63,7 @@ class NcviewApp(App):
         ("e", "preview_open_editor", "Editor"),
         ("p", "show_pins", "Pins"),
         ("P", "toggle_split", "Split preview"),  # noqa: E741
+        ("H", "show_history", "History"),  # noqa: E741
         ("i", "open_ipython", "IPython"),
         ("1", "viewer_tab('1')", "Tab 1"),
         ("2", "viewer_tab('2')", "Tab 2"),
@@ -312,10 +314,25 @@ class NcviewApp(App):
             except Exception:
                 pass
 
+    def action_show_history(self) -> None:
+        """Show the directory history popup."""
+        if self._preview_is_open():
+            return
+        from ncview.widgets.history_screen import HistoryScreen
+
+        browser = self.query_one("#browser", FileBrowser)
+
+        def _on_selected(path: Path | None) -> None:
+            if path is not None:
+                browser._navigate_to(path)
+
+        self.push_screen(HistoryScreen(), callback=_on_selected)
+
     @on(DirectoryChanged)
     def _on_directory_changed(self, event: DirectoryChanged) -> None:
         path_bar = self.query_one("#path-bar", PathBar)
         path_bar.update_path(event.path)
+        add_to_history(str(event.path))
 
 
 def run(start: str = ".") -> None:

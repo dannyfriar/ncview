@@ -31,13 +31,13 @@ class StatusBar(Widget):
     _BROWSER_LINE1_BASE = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
-        ("App", [("P", "split"), ("p", "pins"), ("i", "ipython"), ("q", "quit")]),
+        ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]
 
     _BROWSER_LINE1_SEARCH = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
         ("Filter", [("/", "search"), ("n/N", "next/prev"), (".", "hidden"), ("s", "sort")]),
-        ("App", [("P", "split"), ("p", "pins"), ("i", "ipython"), ("q", "quit")]),
+        ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]
 
     _BROWSER_LINE2 = [

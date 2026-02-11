@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rich.markdown import Markdown
 from rich.text import Text
+from textual import work
 from textual.widgets import Static
 
 from ncview.viewers.base import BaseViewer
@@ -36,16 +37,30 @@ class MarkdownViewer(BaseViewer):
         yield Static(id="md-content")
 
     async def load_content(self) -> None:
-        widget = self.query_one("#md-content", Static)
+        self._load_markdown()
+
+    @work(thread=True, exclusive=True)
+    def _load_markdown(self) -> None:
+        """Read and render markdown in a background thread."""
         try:
             file_size = self.path.stat().st_size
             if file_size > MAX_FILE_SIZE:
-                widget.update(Text(
-                    f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
-                    style="bold red",
-                ))
+                self.app.call_from_thread(
+                    self._show_content,
+                    Text(
+                        f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
+                        style="bold red",
+                    ),
+                )
                 return
             raw = self.path.read_text(errors="replace")
-            widget.update(Markdown(raw))
+            content = Markdown(raw)
+            self.app.call_from_thread(self._show_content, content)
         except Exception as e:
-            widget.update(Text(f"Error reading file: {e}", style="bold red"))
+            self.app.call_from_thread(
+                self._show_content,
+                Text(f"Error reading file: {e}", style="bold red"),
+            )
+
+    def _show_content(self, content) -> None:
+        self.query_one("#md-content", Static).update(content)

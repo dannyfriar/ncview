@@ -33,6 +33,10 @@ class TomlViewer(BaseViewer):
     }
     """
 
+    def __init__(self, path, **kwargs) -> None:
+        super().__init__(path, **kwargs)
+        self._node_count = 0
+
     @staticmethod
     def supported_extensions() -> set[str]:
         return {".toml"}

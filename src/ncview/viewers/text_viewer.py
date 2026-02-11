@@ -6,6 +6,7 @@ from pathlib import Path
 
 from rich.syntax import Syntax
 from rich.text import Text
+from textual import work
 from textual.widgets import Static
 
 from ncview.viewers.base import BaseViewer
@@ -101,17 +102,24 @@ class TextViewer(BaseViewer):
         yield Static(id="text-content")
 
     async def load_content(self) -> None:
-        widget = self.query_one("#text-content", Static)
+        self._load_text()
+
+    @work(thread=True, exclusive=True)
+    def _load_text(self) -> None:
+        """Read and highlight text in a background thread."""
         try:
             file_size = self.path.stat().st_size
             if file_size > MAX_FILE_SIZE:
-                widget.update(Text(
-                    f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
-                    style="bold red",
-                ))
+                self.app.call_from_thread(
+                    self._show_content,
+                    Text(
+                        f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
+                        style="bold red",
+                    ),
+                )
                 return
             raw = self.path.read_text(errors="replace")
-            lines = raw.split("\n")
+            lines = raw.split("\n", MAX_LINES + 1)
             if len(lines) > MAX_LINES:
                 raw = "\n".join(lines[:MAX_LINES])
                 raw += f"\n\n... truncated at {MAX_LINES:,} lines ..."
@@ -128,6 +136,12 @@ class TextViewer(BaseViewer):
             else:
                 content = Text(raw)
 
-            widget.update(content)
+            self.app.call_from_thread(self._show_content, content)
         except Exception as e:
-            widget.update(Text(f"Error reading file: {e}", style="bold red"))
+            self.app.call_from_thread(
+                self._show_content,
+                Text(f"Error reading file: {e}", style="bold red"),
+            )
+
+    def _show_content(self, content) -> None:
+        self.query_one("#text-content", Static).update(content)

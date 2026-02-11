@@ -19,9 +19,12 @@ def human_size(size: int | float) -> str:
     return f"{size:.1f}P"
 
 
-def file_icon(path: Path) -> str:
-    """Return a Nerd Font icon for a path."""
-    if path.is_dir():
+def file_icon(path: Path, is_dir: bool | None = None) -> str:
+    """Return a Nerd Font icon for a path.
+
+    Pass is_dir=True/False to avoid a stat() syscall.
+    """
+    if is_dir if is_dir is not None else path.is_dir():
         return "\uf07b"  # nf-fa-folder
     ext = path.suffix.lower()
     icon = _ICON_MAP.get(ext)

@@ -16,6 +16,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import DataTable, Input
 
+from ncview.utils.clipboard import osc52_copy
 from ncview.utils.file_info import file_icon, human_size
 
 
@@ -23,6 +24,24 @@ class SortKey(Enum):
     NAME = "name"
     SIZE = "size"
     MODIFIED = "modified"
+
+
+class InputMode(Enum):
+    NONE = "none"
+    SEARCH = "search"
+    EDITOR = "editor"
+    TOUCH = "touch"
+    RENAME = "rename"
+    MKDIR = "mkdir"
+
+
+_INPUT_IDS: dict[InputMode, str] = {
+    InputMode.SEARCH: "search-input",
+    InputMode.EDITOR: "editor-input",
+    InputMode.TOUCH: "touch-input",
+    InputMode.RENAME: "rename-input",
+    InputMode.MKDIR: "mkdir-input",
+}
 
 
 class FileHighlighted(Message):
@@ -88,15 +107,12 @@ class FileBrowser(Widget):
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self.current_dir = (start_path or Path.cwd()).resolve()
+        self._load_gen = 0
         self._entries: list[Path] = []
         self._show_hidden = False
         self._sort_key = SortKey.NAME
-        self._search_active = False
-        self._editor_active = False
-        self._touch_active = False
-        self._rename_active = False
+        self._input_mode = InputMode.NONE
         self._rename_path: Path | None = None
-        self._mkdir_active = False
         self._path_map: dict[str, Path] = {}
 
     def compose(self):
@@ -112,35 +128,11 @@ class FileBrowser(Widget):
 
     def on_key(self, event: Key) -> None:
         """Intercept keys before DataTable eats them."""
-        if self._search_active:
+        if self._input_mode != InputMode.NONE:
             if event.key == "escape":
                 event.prevent_default()
                 event.stop()
-                self._finish_search()
-            return
-        if self._editor_active:
-            if event.key == "escape":
-                event.prevent_default()
-                event.stop()
-                self._finish_editor()
-            return
-        if self._touch_active:
-            if event.key == "escape":
-                event.prevent_default()
-                event.stop()
-                self._finish_touch()
-            return
-        if self._rename_active:
-            if event.key == "escape":
-                event.prevent_default()
-                event.stop()
-                self._finish_rename()
-            return
-        if self._mkdir_active:
-            if event.key == "escape":
-                event.prevent_default()
-                event.stop()
-                self._finish_mkdir()
+                self._finish_input()
             return
         if event.key == "backspace":
             event.prevent_default()
@@ -155,9 +147,23 @@ class FileBrowser(Widget):
             event.stop()
             self.action_enter_or_open()
 
+    def _finish_input(self) -> None:
+        """Hide the active input and return focus to the file list."""
+        if self._input_mode == InputMode.NONE:
+            return
+        input_id = _INPUT_IDS[self._input_mode]
+        self.query_one(f"#{input_id}", Input).styles.display = "none"
+        if self._input_mode == InputMode.RENAME:
+            self._rename_path = None
+        self._input_mode = InputMode.NONE
+        self.query_one("#file-list", DataTable).focus()
+
     @work(thread=True, exclusive=True)
     def _load_directory(self) -> None:
         """Load directory contents in a background thread."""
+        self._load_gen += 1
+        gen = self._load_gen
+
         try:
             scan = list(os.scandir(self.current_dir))
         except (PermissionError, OSError):
@@ -200,10 +206,11 @@ class FileBrowser(Widget):
         dir_entries.sort(key=_sort_func)
         file_entries.sort(key=_sort_func)
 
-        # Build Path lists and sizes dict
+        # Build Path lists, dir names set, and sizes dict
         dirs = [Path(e.path) for e in dir_entries]
         files = [Path(e.path) for e in file_entries]
         all_entries = dirs + files
+        dir_names = {e.name for e in dir_entries}
 
         sizes: dict[str, int] = {}
         for e in file_entries:
@@ -216,13 +223,16 @@ class FileBrowser(Widget):
         # Git status — only if we're in a git repo, with a timeout
         git_status = self._get_git_status()
 
-        self.app.call_from_thread(self._populate_list, all_entries, sizes, git_status)
+        # Drop stale results if the user navigated away while we were loading
+        if gen != self._load_gen:
+            return
+        self.app.call_from_thread(self._populate_list, gen, all_entries, dir_names, sizes, git_status)
 
     def _get_git_status(self) -> dict[str, str]:
         """Get git status for files in the current directory. Returns empty dict if not a repo."""
         try:
             result = subprocess.run(
-                ["git", "status", "--porcelain", "-uall", "."],
+                ["git", "status", "--porcelain", "-unormal", "."],
                 cwd=str(self.current_dir),
                 capture_output=True,
                 text=True,
@@ -239,9 +249,9 @@ class FileBrowser(Widget):
                 continue
             xy = line[:2]
             filepath = line[3:]
-            # Strip leading quotes from paths with special chars
+            # Unquote git C-style quoting for paths with special chars
             if filepath.startswith('"') and filepath.endswith('"'):
-                filepath = filepath[1:-1]
+                filepath = filepath[1:-1].replace('\\"', '"').replace('\\\\', '\\')
             # Only care about direct children of current dir
             name = filepath.split("/")[0]
             if name not in status_map:
@@ -251,8 +261,18 @@ class FileBrowser(Widget):
                 status_map[name] = " M"
         return status_map
 
-    def _populate_list(self, entries: list[Path], sizes: dict[str, int], git_status: dict[str, str] | None = None) -> None:
+    def _populate_list(
+        self,
+        gen: int,
+        entries: list[Path],
+        dir_names: set[str],
+        sizes: dict[str, int],
+        git_status: dict[str, str] | None = None,
+    ) -> None:
         """Rebuild the DataTable with current entries."""
+        # Discard if a newer load has already been requested
+        if gen != self._load_gen:
+            return
         self._entries = entries
         self._path_map.clear()
         dt = self.query_one("#file-list", DataTable)
@@ -261,18 +281,24 @@ class FileBrowser(Widget):
         dt.add_column("Name", key="name")
         dt.add_column("Size", key="size")
 
+        rows: list[tuple[Text, str]] = []
+        keys: list[str] = []
+
         # Add parent directory entry
         if self.current_dir != Path(self.current_dir.root):
             label = Text()
             label.append("\uf07b ", style="bold #e6db74")
             label.append("..", style="bold #e6db74")
-            dt.add_row(label, "", key="..")
+            rows.append((label, ""))
+            keys.append("..")
             self._path_map[".."] = self.current_dir.parent
 
+        has_git = git_status is not None
         for entry in entries:
+            is_dir = entry.name in dir_names
             label = Text()
             # Git status marker
-            if git_status and entry.name in git_status:
+            if has_git and entry.name in git_status:
                 xy = git_status[entry.name]
                 if xy == "??":
                     label.append("? ", style="bold #a6e22e")
@@ -284,22 +310,27 @@ class FileBrowser(Widget):
                     label.append("- ", style="bold #f92672")
                 else:
                     label.append("* ", style="bold #ae81ff")
-            elif git_status is not None:
+            elif has_git:
                 label.append("  ")
-            icon = file_icon(entry)
+            icon = file_icon(entry, is_dir=is_dir)
             label.append(f"{icon} ")
-            if entry.is_dir():
+            if is_dir:
                 label.append(entry.name + "/", style="bold #66d9ef")
                 size_text = ""
             else:
                 label.append(entry.name, style="#f8f8f2")
                 size_text = human_size(sizes[entry.name]) if entry.name in sizes else ""
-            dt.add_row(label, size_text, key=entry.name)
+            rows.append((label, size_text))
+            keys.append(entry.name)
             self._path_map[entry.name] = entry
+
+        # Batch add all rows at once
+        for row, key in zip(rows, keys):
+            dt.add_row(*row, key=key)
 
         sort_label = self._sort_key.value
         hidden_label = "shown" if self._show_hidden else "hidden"
-        count_dirs = sum(1 for e in entries if e.is_dir())
+        count_dirs = len(dir_names)
         count_files = len(entries) - count_dirs
         total = count_dirs + count_files
         self.border_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}"
@@ -382,16 +413,16 @@ class FileBrowser(Widget):
         self._load_directory()
 
     def action_start_search(self) -> None:
+        self._input_mode = InputMode.SEARCH
         search_input = self.query_one("#search-input", Input)
         search_input.styles.display = "block"
         search_input.value = ""
         search_input.focus()
-        self._search_active = True
 
     @on(Input.Submitted, "#search-input")
     def _on_search_submitted(self, event: Input.Submitted) -> None:
         query = event.value.lower()
-        self._finish_search()
+        self._finish_input()
         if not query:
             return
         # Check ".." entry first
@@ -406,12 +437,6 @@ class FileBrowser(Widget):
                 dt.move_cursor(row=i + offset)
                 break
 
-    def _finish_search(self) -> None:
-        search_input = self.query_one("#search-input", Input)
-        search_input.styles.display = "none"
-        self._search_active = False
-        self.query_one("#file-list", DataTable).focus()
-
     def action_open_editor(self) -> None:
         path = self._get_highlighted_path()
         if path is None or path.is_dir():
@@ -422,7 +447,7 @@ class FileBrowser(Widget):
 
     def action_open_editor_path(self) -> None:
         path = self._get_highlighted_path()
-        self._editor_active = True
+        self._input_mode = InputMode.EDITOR
         editor_input = self.query_one("#editor-input", Input)
         editor_input.value = str(path) if path and not path.is_dir() else str(self.current_dir) + "/"
         editor_input.styles.display = "block"
@@ -431,7 +456,7 @@ class FileBrowser(Widget):
     @on(Input.Submitted, "#editor-input")
     def _on_editor_submitted(self, event: Input.Submitted) -> None:
         file_path = event.value.strip()
-        self._finish_editor()
+        self._finish_input()
         if not file_path:
             return
         path = Path(file_path).resolve()
@@ -442,13 +467,8 @@ class FileBrowser(Widget):
         with self.app.suspend():
             subprocess.call([*shlex.split(editor), str(path)])
 
-    def _finish_editor(self) -> None:
-        self._editor_active = False
-        self.query_one("#editor-input", Input).styles.display = "none"
-        self.query_one("#file-list", DataTable).focus()
-
     def action_touch_file(self) -> None:
-        self._touch_active = True
+        self._input_mode = InputMode.TOUCH
         touch_input = self.query_one("#touch-input", Input)
         touch_input.value = str(self.current_dir) + "/"
         touch_input.styles.display = "block"
@@ -457,7 +477,7 @@ class FileBrowser(Widget):
     @on(Input.Submitted, "#touch-input")
     def _on_touch_submitted(self, event: Input.Submitted) -> None:
         file_path = event.value.strip()
-        self._finish_touch()
+        self._finish_input()
         if not file_path:
             return
         path = Path(file_path)
@@ -472,11 +492,6 @@ class FileBrowser(Widget):
         except OSError as exc:
             self.notify(f"Failed: {exc}", severity="error")
 
-    def _finish_touch(self) -> None:
-        self._touch_active = False
-        self.query_one("#touch-input", Input).styles.display = "none"
-        self.query_one("#file-list", DataTable).focus()
-
     def action_rename(self) -> None:
         """Rename the highlighted file or directory."""
         path = self._get_highlighted_path()
@@ -490,7 +505,7 @@ class FileBrowser(Widget):
             return
         if row_key == "..":
             return
-        self._rename_active = True
+        self._input_mode = InputMode.RENAME
         self._rename_path = path
         rename_input = self.query_one("#rename-input", Input)
         rename_input.value = path.name
@@ -501,7 +516,7 @@ class FileBrowser(Widget):
     def _on_rename_submitted(self, event: Input.Submitted) -> None:
         new_name = event.value.strip()
         old_path = self._rename_path
-        self._finish_rename()
+        self._finish_input()
         if not new_name or old_path is None:
             return
         if "/" in new_name or "\\" in new_name:
@@ -518,14 +533,8 @@ class FileBrowser(Widget):
         except OSError as exc:
             self.notify(f"Rename failed: {exc}", severity="error")
 
-    def _finish_rename(self) -> None:
-        self._rename_active = False
-        self._rename_path = None
-        self.query_one("#rename-input", Input).styles.display = "none"
-        self.query_one("#file-list", DataTable).focus()
-
     def action_mkdir(self) -> None:
-        self._mkdir_active = True
+        self._input_mode = InputMode.MKDIR
         mkdir_input = self.query_one("#mkdir-input", Input)
         mkdir_input.value = ""
         mkdir_input.styles.display = "block"
@@ -534,7 +543,7 @@ class FileBrowser(Widget):
     @on(Input.Submitted, "#mkdir-input")
     def _on_mkdir_submitted(self, event: Input.Submitted) -> None:
         dir_name = event.value.strip()
-        self._finish_mkdir()
+        self._finish_input()
         if not dir_name:
             return
         new_path = self.current_dir / dir_name
@@ -548,23 +557,13 @@ class FileBrowser(Widget):
         except OSError as exc:
             self.notify(f"Mkdir failed: {exc}", severity="error")
 
-    def _finish_mkdir(self) -> None:
-        self._mkdir_active = False
-        self.query_one("#mkdir-input", Input).styles.display = "none"
-        self.query_one("#file-list", DataTable).focus()
-
     def action_yank_path(self) -> None:
         """Copy the highlighted file's absolute path to the system clipboard."""
         path = self._get_highlighted_path()
         if path is None:
             return
         abs_path = str(path.resolve())
-        import base64
-        import sys
-        # OSC 52 escape sequence — works over SSH, handled by the local terminal
-        encoded = base64.b64encode(abs_path.encode()).decode()
-        sys.stdout.write(f"\033]52;c;{encoded}\a")
-        sys.stdout.flush()
+        osc52_copy(abs_path)
         self.notify(f"Copied: {abs_path}", severity="information")
 
     def action_delete(self) -> None:
@@ -606,4 +605,3 @@ class FileBrowser(Widget):
             ),
             callback=_on_result,
         )
-

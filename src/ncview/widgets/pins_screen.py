@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-import sys
 from pathlib import Path
 
 from rich.text import Text
@@ -13,6 +11,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
+from ncview.utils.clipboard import osc52_copy
 from ncview.utils.pins import Pin, add_pin, load_pins, remove_pin
 
 
@@ -183,9 +182,7 @@ class PinsScreen(ModalScreen[Path | None]):
         pin_path = lv.highlighted_child.name
         if not pin_path:
             return
-        encoded = base64.b64encode(pin_path.encode()).decode()
-        sys.stdout.write(f"\033]52;c;{encoded}\a")
-        sys.stdout.flush()
+        osc52_copy(pin_path)
         self.app.notify(f"Copied: {pin_path}", severity="information")
 
     def action_edit_pin(self) -> None:

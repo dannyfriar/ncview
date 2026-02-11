@@ -15,6 +15,7 @@ from ncview.viewers.base import BaseViewer
 
 MAX_DEPTH = 50
 MAX_NODES = 50_000
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
 
 
 class JsonTree(Tree):
@@ -75,6 +76,10 @@ class JsonViewer(BaseViewer):
     }
     """
 
+    def __init__(self, path: Path, **kwargs) -> None:
+        super().__init__(path, **kwargs)
+        self._node_count = 0
+
     @staticmethod
     def supported_extensions() -> set[str]:
         return {".json", ".geojson", ".jsonl"}
@@ -94,6 +99,13 @@ class JsonViewer(BaseViewer):
     def _parse_json(self) -> None:
         """Parse JSON in a background thread to keep UI responsive for large files."""
         try:
+            file_size = self.path.stat().st_size
+            if file_size > MAX_FILE_SIZE:
+                self.app.call_from_thread(
+                    self._show_error,
+                    f"File too large ({file_size / 1024 / 1024:.1f} MB > {MAX_FILE_SIZE // 1024 // 1024} MB limit)",
+                )
+                return
             raw = self.path.read_text(errors="replace")
 
             if self.path.suffix.lower() == ".jsonl":

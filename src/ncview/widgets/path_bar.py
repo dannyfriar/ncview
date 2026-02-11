@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from functools import lru_cache
 from pathlib import Path
 
 from rich.text import Text
@@ -15,29 +16,32 @@ from textual.widgets import Static
 def _git_info(directory: Path) -> tuple[str | None, bool | None]:
     """Return (branch_name, is_dirty) or (None, None) if not a repo."""
     try:
-        branch_result = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        result = subprocess.run(
+            ["git", "status", "--porcelain", "-b", "-uno"],
             cwd=str(directory),
             capture_output=True,
             text=True,
             timeout=2,
         )
-        if branch_result.returncode != 0:
+        if result.returncode != 0:
             return None, None
-        branch = branch_result.stdout.strip()
-        status_result = subprocess.run(
-            ["git", "status", "--porcelain", "-uno"],
-            cwd=str(directory),
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-        dirty = bool(status_result.stdout.strip()) if status_result.returncode == 0 else None
+        lines = result.stdout.splitlines()
+        if not lines or not lines[0].startswith("## "):
+            return None, None
+        header = lines[0][3:]
+        if header.startswith("No commits yet"):
+            return "main", False
+        if header.startswith("HEAD (no branch)"):
+            branch = "HEAD"
+        else:
+            branch = header.split("...")[0]
+        dirty = len(lines) > 1
         return branch, dirty
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return None, None
 
 
+@lru_cache(maxsize=1)
 def _virtualenv_name() -> str | None:
     """Return the active virtualenv name, or None."""
     venv = os.environ.get("VIRTUAL_ENV")

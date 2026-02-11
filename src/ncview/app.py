@@ -10,6 +10,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Header
 
 from ncview.utils.file_types import registry
+from ncview.utils.pins import add_pin
 from ncview.viewers.csv_viewer import CsvViewer
 from ncview.viewers.fallback_viewer import FallbackViewer
 from ncview.viewers.json_viewer import JsonViewer
@@ -83,6 +84,8 @@ class NcviewApp(App):
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
+        # Ensure Home pin exists
+        add_pin(str(Path.home()), name="\uf015 Home")
         browser = self.query_one("#browser", FileBrowser)
         browser.border_title = "Files"
         browser.focus()

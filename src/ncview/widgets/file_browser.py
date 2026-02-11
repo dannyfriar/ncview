@@ -104,6 +104,7 @@ class FileBrowser(Widget):
         ("t", "touch_file", "Touch"),
         ("r", "rename", "Rename"),
         ("M", "mkdir", "Mkdir"),  # noqa: E741
+        ("~", "go_home", "Home"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -616,6 +617,10 @@ class FileBrowser(Widget):
             self._load_directory()
         except OSError as exc:
             self.notify(f"Mkdir failed: {exc}", severity="error")
+
+    def action_go_home(self) -> None:
+        """Navigate to the home directory."""
+        self._navigate_to(Path.home())
 
     def action_yank_path(self) -> None:
         """Copy the highlighted file's absolute path to the system clipboard."""

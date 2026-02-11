@@ -76,8 +76,10 @@ class FileBrowser(Widget):
         ("s", "cycle_sort", "Cycle sort"),
         ("slash", "start_search", "Search"),
         ("e", "open_editor", "Editor"),
+        ("E", "open_editor_path", "Edit path"),  # noqa: E741
         ("y", "yank_path", "Copy path"),
         ("d", "delete", "Delete"),
+        ("t", "touch_file", "Touch"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -87,11 +89,15 @@ class FileBrowser(Widget):
         self._show_hidden = False
         self._sort_key = SortKey.NAME
         self._search_active = False
+        self._editor_active = False
+        self._touch_active = False
         self._path_map: dict[str, Path] = {}
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
         yield Input(placeholder="Search...", id="search-input")
+        yield Input(placeholder="File path to edit...", id="editor-input")
+        yield Input(placeholder="New file name...", id="touch-input")
 
     def on_mount(self) -> None:
         self._load_directory()
@@ -103,6 +109,18 @@ class FileBrowser(Widget):
                 event.prevent_default()
                 event.stop()
                 self._finish_search()
+            return
+        if self._editor_active:
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self._finish_editor()
+            return
+        if self._touch_active:
+            if event.key == "escape":
+                event.prevent_default()
+                event.stop()
+                self._finish_touch()
             return
         if event.key == "backspace":
             event.prevent_default()
@@ -121,45 +139,61 @@ class FileBrowser(Widget):
     def _load_directory(self) -> None:
         """Load directory contents in a background thread."""
         try:
-            entries = list(self.current_dir.iterdir())
-        except PermissionError:
-            entries = []
+            scan = list(os.scandir(self.current_dir))
+        except (PermissionError, OSError):
+            scan = []
 
         if not self._show_hidden:
-            entries = [e for e in entries if not e.name.startswith(".")]
+            scan = [e for e in scan if not e.name.startswith(".")]
 
-        dirs = sorted(
-            [e for e in entries if e.is_dir()],
-            key=self._sort_func,
-        )
-        files = sorted(
-            [e for e in entries if not e.is_dir()],
-            key=self._sort_func,
-        )
+        # Partition using cached is_dir (no extra stat)
+        dir_entries = []
+        file_entries = []
+        for e in scan:
+            try:
+                if e.is_dir(follow_symlinks=True):
+                    dir_entries.append(e)
+                else:
+                    file_entries.append(e)
+            except OSError:
+                file_entries.append(e)
+
+        # Cache stat results once per entry for sorting and sizes
+        stat_cache: dict[str, os.stat_result] = {}
+        if self._sort_key in (SortKey.SIZE, SortKey.MODIFIED):
+            for e in scan:
+                try:
+                    stat_cache[e.name] = e.stat(follow_symlinks=True)
+                except OSError:
+                    pass
+
+        sort_key = self._sort_key
+        def _sort_func(entry: os.DirEntry) -> object:
+            if sort_key == SortKey.SIZE:
+                st = stat_cache.get(entry.name)
+                return st.st_size if st else 0
+            elif sort_key == SortKey.MODIFIED:
+                st = stat_cache.get(entry.name)
+                return -st.st_mtime if st else 0
+            return entry.name.lower()
+
+        dir_entries.sort(key=_sort_func)
+        file_entries.sort(key=_sort_func)
+
+        # Build Path lists and sizes dict
+        dirs = [Path(e.path) for e in dir_entries]
+        files = [Path(e.path) for e in file_entries]
         all_entries = dirs + files
 
-        # Pre-compute sizes and dir item counts on the worker thread
         sizes: dict[str, int] = {}
-        for entry in files:
+        for e in file_entries:
             try:
-                sizes[entry.name] = entry.stat().st_size
+                st = stat_cache.get(e.name) or e.stat(follow_symlinks=True)
+                sizes[e.name] = st.st_size
             except OSError:
                 pass
 
         self.app.call_from_thread(self._populate_list, all_entries, sizes)
-
-    def _sort_func(self, path: Path):
-        if self._sort_key == SortKey.SIZE:
-            try:
-                return path.stat().st_size
-            except OSError:
-                return 0
-        elif self._sort_key == SortKey.MODIFIED:
-            try:
-                return -path.stat().st_mtime
-            except OSError:
-                return 0
-        return path.name.lower()
 
     def _populate_list(self, entries: list[Path], sizes: dict[str, int]) -> None:
         """Rebuild the DataTable with current entries."""
@@ -315,6 +349,64 @@ class FileBrowser(Widget):
         import subprocess
         with self.app.suspend():
             subprocess.call([*shlex.split(editor), str(path)])
+
+    def action_open_editor_path(self) -> None:
+        path = self._get_highlighted_path()
+        self._editor_active = True
+        editor_input = self.query_one("#editor-input", Input)
+        editor_input.value = str(path) if path and not path.is_dir() else str(self.current_dir) + "/"
+        editor_input.styles.display = "block"
+        editor_input.focus()
+
+    @on(Input.Submitted, "#editor-input")
+    def _on_editor_submitted(self, event: Input.Submitted) -> None:
+        file_path = event.value.strip()
+        self._finish_editor()
+        if not file_path:
+            return
+        path = Path(file_path).resolve()
+        if path.is_dir():
+            self._navigate_to(path)
+            return
+        editor = os.environ.get("EDITOR", "vim")
+        import subprocess
+        with self.app.suspend():
+            subprocess.call([*shlex.split(editor), str(path)])
+
+    def _finish_editor(self) -> None:
+        self._editor_active = False
+        self.query_one("#editor-input", Input).styles.display = "none"
+        self.query_one("#file-list", DataTable).focus()
+
+    def action_touch_file(self) -> None:
+        self._touch_active = True
+        touch_input = self.query_one("#touch-input", Input)
+        touch_input.value = str(self.current_dir) + "/"
+        touch_input.styles.display = "block"
+        touch_input.focus()
+
+    @on(Input.Submitted, "#touch-input")
+    def _on_touch_submitted(self, event: Input.Submitted) -> None:
+        file_path = event.value.strip()
+        self._finish_touch()
+        if not file_path:
+            return
+        path = Path(file_path)
+        if path.exists():
+            self.notify(f"Already exists: {path.name}", severity="warning")
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
+            self.notify(f"Created: {path.name}", severity="information")
+            self._load_directory()
+        except OSError as exc:
+            self.notify(f"Failed: {exc}", severity="error")
+
+    def _finish_touch(self) -> None:
+        self._touch_active = False
+        self.query_one("#touch-input", Input).styles.display = "none"
+        self.query_one("#file-list", DataTable).focus()
 
     def action_yank_path(self) -> None:
         """Copy the highlighted file's absolute path to the system clipboard."""

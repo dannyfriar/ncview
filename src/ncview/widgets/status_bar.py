@@ -28,7 +28,7 @@ class StatusBar(Widget):
 
     _BROWSER_HINTS = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("y", "copy"), ("d", "delete"), ("p", "pins"), ("i", "ipython")]),
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("t", "touch"), ("y", "copy"), ("d", "delete"), ("p", "pins"), ("i", "ipython")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
         ("App", [("q", "quit")]),
     ]

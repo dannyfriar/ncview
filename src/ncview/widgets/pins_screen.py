@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import sys
 from pathlib import Path
 
 from rich.text import Text
@@ -81,6 +83,8 @@ class PinsScreen(ModalScreen[Path | None]):
         ("k", "cursor_up", "Up"),
         ("l", "select_pin", "Select"),
         ("a", "add_pin", "Add pin"),
+        ("e", "edit_pin", "Edit pin"),
+        ("y", "yank_pin", "Copy path"),
         ("d", "delete_pin", "Unpin"),
         ("escape", "cancel", "Cancel"),
         ("q", "cancel", "Cancel"),
@@ -92,6 +96,7 @@ class PinsScreen(ModalScreen[Path | None]):
         self._pins: list[Pin] = []
         self._current_dir = current_dir
         self._adding = False
+        self._edit_old_path: str | None = None
 
     def compose(self) -> ComposeResult:
         self._pins = load_pins()
@@ -110,6 +115,10 @@ class PinsScreen(ModalScreen[Path | None]):
             hint.append(" open  ", style="#75715e")
             hint.append("a", style="bold #66d9ef")
             hint.append(" add  ", style="#75715e")
+            hint.append("e", style="bold #66d9ef")
+            hint.append(" edit  ", style="#75715e")
+            hint.append("y", style="bold #66d9ef")
+            hint.append(" yank  ", style="#75715e")
             hint.append("d", style="bold #66d9ef")
             hint.append(" unpin  ", style="#75715e")
             hint.append("q/Esc", style="bold #66d9ef")
@@ -161,6 +170,53 @@ class PinsScreen(ModalScreen[Path | None]):
         else:
             self.dismiss(None)
 
+    def action_yank_pin(self) -> None:
+        """Copy the highlighted pin's path to the clipboard via OSC 52."""
+        if self._adding:
+            return
+        try:
+            lv = self.query_one("#pins-list", ListView)
+        except Exception:
+            return
+        if lv.highlighted_child is None:
+            return
+        pin_path = lv.highlighted_child.name
+        if not pin_path:
+            return
+        encoded = base64.b64encode(pin_path.encode()).decode()
+        sys.stdout.write(f"\033]52;c;{encoded}\a")
+        sys.stdout.flush()
+        self.app.notify(f"Copied: {pin_path}", severity="information")
+
+    def action_edit_pin(self) -> None:
+        """Edit the highlighted pin's path and name."""
+        if self._adding:
+            return
+        try:
+            lv = self.query_one("#pins-list", ListView)
+        except Exception:
+            return
+        if lv.highlighted_child is None:
+            return
+        pin_path = lv.highlighted_child.name
+        if not pin_path:
+            return
+        # Find the current name
+        pin_name = ""
+        for pin in self._pins:
+            if pin["path"] == pin_path:
+                pin_name = pin["name"]
+                break
+        self._edit_old_path = pin_path
+        self._adding = True
+        path_inp = self.query_one("#pin-add-path", Input)
+        path_inp.value = pin_path
+        path_inp.styles.display = "block"
+        name_inp = self.query_one("#pin-add-name", Input)
+        name_inp.value = pin_name
+        name_inp.styles.display = "block"
+        path_inp.focus()
+
     def action_add_pin(self) -> None:
         """Show the inline inputs to pin a directory."""
         if self._adding:
@@ -190,8 +246,13 @@ class PinsScreen(ModalScreen[Path | None]):
             self.app.notify(f"Not a directory: {path}", severity="error")
             return
         name = event.value.strip()
+        # If editing and the path changed, remove the old pin first
+        if self._edit_old_path and str(path) != self._edit_old_path:
+            remove_pin(self._edit_old_path)
         overwritten = add_pin(str(path), name=name)
-        if overwritten:
+        if self._edit_old_path:
+            self.app.notify(f"Updated pin: {path}", severity="information")
+        elif overwritten:
             self.app.notify(f"Updated pin: {path}", severity="information")
         else:
             self.app.notify(f"Pinned: {path}", severity="information")
@@ -200,6 +261,7 @@ class PinsScreen(ModalScreen[Path | None]):
 
     def _finish_add(self) -> None:
         self._adding = False
+        self._edit_old_path = None
         self.query_one("#pin-add-path", Input).styles.display = "none"
         self.query_one("#pin-add-name", Input).styles.display = "none"
         try:

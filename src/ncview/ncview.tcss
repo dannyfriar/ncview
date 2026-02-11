@@ -19,6 +19,10 @@ PathBar {
     background: #0d0e0c;
 }
 
+#main-content {
+    height: 1fr;
+}
+
 FileBrowser {
     height: 1fr;
     width: 1fr;

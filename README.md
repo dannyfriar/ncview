@@ -45,6 +45,8 @@ ncview --help       # show usage
 | `.` | Toggle hidden files |
 | `s` | Cycle sort (name → size → modified) |
 | `/` | Search in current directory |
+| `n` / `N` | Jump to next/previous search match |
+| `P` | Toggle split preview pane |
 | `e` | Open file in `$EDITOR` (default: `vim`) |
 | `q` / `Ctrl+C` | Quit |
 

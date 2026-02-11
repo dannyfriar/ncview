@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from textual import on
+from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Header
 
 from ncview.utils.file_types import registry
@@ -18,7 +18,12 @@ from ncview.viewers.parquet_viewer import ParquetViewer
 from ncview.viewers.text_viewer import TextViewer
 from ncview.viewers.toml_viewer import TomlViewer
 from ncview.viewers.yaml_viewer import YamlViewer
-from ncview.widgets.file_browser import DirectoryChanged, FileBrowser, FileSelected
+from ncview.widgets.file_browser import (
+    DirectoryChanged,
+    FileBrowser,
+    FileHighlighted,
+    FileSelected,
+)
 from ncview.widgets.path_bar import PathBar
 from ncview.widgets.preview_panel import PreviewPanel
 from ncview.widgets.status_bar import StatusBar
@@ -55,6 +60,7 @@ class NcviewApp(App):
         ("G", "preview_scroll_bottom", "Bottom"),
         ("e", "preview_open_editor", "Editor"),
         ("p", "show_pins", "Pins"),
+        ("P", "toggle_split", "Split preview"),  # noqa: E741
         ("i", "open_ipython", "IPython"),
         ("1", "viewer_tab('1')", "Tab 1"),
         ("2", "viewer_tab('2')", "Tab 2"),
@@ -65,12 +71,15 @@ class NcviewApp(App):
         super().__init__(**kwargs)
         self._start_path = start_path or Path.cwd()
         self._preview_path: Path | None = None
+        self._split_view = False
+        self._split_pending_path: Path | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield PathBar(self._start_path, id="path-bar")
-        yield FileBrowser(self._start_path, id="browser")
-        yield PreviewPanel(id="preview")
+        with Horizontal(id="main-content"):
+            yield FileBrowser(self._start_path, id="browser")
+            yield PreviewPanel(id="preview")
         yield StatusBar(id="status-bar")
 
     def on_mount(self) -> None:
@@ -81,11 +90,59 @@ class NcviewApp(App):
         preview.border_title = "Preview"
 
     def _preview_is_open(self) -> bool:
+        """True when in full-screen preview mode (not split)."""
         return self.query_one("#preview", PreviewPanel).has_class("visible")
+
+    # --- Split preview ---
+
+    async def action_toggle_split(self) -> None:
+        """Toggle the split preview pane."""
+        if self._preview_is_open():
+            return
+        self._split_view = not self._split_view
+        preview = self.query_one("#preview", PreviewPanel)
+        browser = self.query_one("#browser", FileBrowser)
+        if self._split_view:
+            browser.styles.width = "45%"
+            preview.styles.display = "block"
+            preview.styles.width = "55%"
+            # Load preview for currently highlighted file
+            path = browser._get_highlighted_path()
+            if path and path.is_file():
+                self._split_pending_path = path
+                self._debounce_split_preview()
+        else:
+            await preview.clear()
+            browser.styles.width = "1fr"
+            preview.styles.display = "none"
+            preview.styles.width = "1fr"
+            browser.query_one("#file-list").focus()
+
+    @on(FileHighlighted)
+    def _on_file_highlighted(self, event: FileHighlighted) -> None:
+        """In split mode, update the preview as the cursor moves."""
+        if not self._split_view or self._preview_is_open():
+            return
+        if not event.path.is_file():
+            return
+        self._split_pending_path = event.path
+        self._debounce_split_preview()
+
+    @work(exclusive=True, group="split-preview")
+    async def _debounce_split_preview(self) -> None:
+        """Load the split preview after a short debounce."""
+        import asyncio
+        await asyncio.sleep(0.1)
+        path = self._split_pending_path
+        if path and path.is_file() and self._split_view and not self._preview_is_open():
+            preview = self.query_one("#preview", PreviewPanel)
+            await preview.show_file(path)
+
+    # --- Full-screen preview ---
 
     @on(FileSelected)
     async def _on_file_selected(self, event: FileSelected) -> None:
-        """User pressed Enter/l on a file — show preview."""
+        """User pressed Enter/l on a file — show full-screen preview."""
         if not event.path.is_file():
             return
         preview = self.query_one("#preview", PreviewPanel)
@@ -96,6 +153,8 @@ class NcviewApp(App):
 
         # Hide browser, show preview full-width
         browser.styles.display = "none"
+        preview.styles.display = "block"
+        preview.styles.width = "1fr"
         preview.add_class("visible")
         self.query_one("#status-bar", StatusBar).mode = "preview"
 
@@ -113,27 +172,46 @@ class NcviewApp(App):
                 preview.query_one("#preview-scroll", VerticalScroll).focus()
 
     async def _close_preview(self) -> None:
-        """Return from preview to browser."""
+        """Return from full-screen preview to browser (or split view)."""
         preview = self.query_one("#preview", PreviewPanel)
         browser = self.query_one("#browser", FileBrowser)
-
-        await preview.clear()
         self._preview_path = None
-
         preview.remove_class("visible")
-        browser.styles.display = "block"
+
+        if self._split_view:
+            # Return to split layout
+            browser.styles.display = "block"
+            browser.styles.width = "45%"
+            preview.styles.width = "55%"
+            # Update preview for currently highlighted file
+            path = browser._get_highlighted_path()
+            if path and path.is_file():
+                self._split_pending_path = path
+                self._debounce_split_preview()
+        else:
+            # Return to browser-only
+            await preview.clear()
+            browser.styles.display = "block"
+            browser.styles.width = "1fr"
+            preview.styles.display = "none"
+            preview.styles.width = "1fr"
+
         browser.query_one("#file-list").focus()
         self.query_one("#status-bar", StatusBar).mode = "browser"
 
     async def action_close_preview(self) -> None:
         if self._preview_is_open():
             await self._close_preview()
+        elif self._split_view:
+            await self.action_toggle_split()
 
     async def action_close_preview_or_parent(self) -> None:
         """h/backspace: close preview if open, otherwise go to parent dir."""
         if self._preview_is_open():
             await self._close_preview()
         # If preview is not open, let the FileBrowser handle h/backspace itself
+
+    # --- Other actions ---
 
     def action_show_pins(self) -> None:
         """Show the pinned directories popup."""

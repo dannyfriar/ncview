@@ -2,13 +2,14 @@
 
 Terminal file browser with vim keybindings, inspired by [ncdu](https://dev.yorhel.nl/ncdu). Built with [Textual](https://textual.textualize.io/), [Polars](https://pola.rs/), and [PyArrow](https://arrow.apache.org/docs/python/).
 
-[![PyPI](https://img.shields.io/badge/pypi-v0.3.4-blue)](https://pypi.org/project/ncview/)
+[![PyPI](https://img.shields.io/badge/pypi-v0.3.5-blue)](https://pypi.org/project/ncview/)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
 
 ## Features
 
 - **Vim-style navigation** — `j`/`k`/`h`/`l`, arrow keys, and more
 - **Parquet viewer** — schema, scrollable data table (first 1K rows), and statistics via Polars. Handles 50GB+ files efficiently using PyArrow metadata reads (O(1), no full scan)
+- **CSV/TSV viewer** — schema, scrollable data table, and statistics via Polars. Tab-separated files auto-detected
 - **JSON viewer** — collapsible/expandable tree with color-coded values
 - **Text viewer** — syntax highlighting for 50+ languages via Rich
 - **Fallback viewer** — file metadata for unknown/binary types

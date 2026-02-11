@@ -10,6 +10,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Header
 
 from ncview.utils.file_types import registry
+from ncview.viewers.csv_viewer import CsvViewer
 from ncview.viewers.fallback_viewer import FallbackViewer
 from ncview.viewers.json_viewer import JsonViewer
 from ncview.viewers.markdown_viewer import MarkdownViewer
@@ -25,6 +26,7 @@ from ncview.widgets.status_bar import StatusBar
 # Register viewers
 registry.register(TextViewer)
 registry.register(ParquetViewer)
+registry.register(CsvViewer)
 registry.register(JsonViewer)
 registry.register(MarkdownViewer)
 registry.register(YamlViewer)
@@ -197,26 +199,37 @@ class NcviewApp(App):
         await self._close_preview()
 
     def action_viewer_tab(self, tab_num: str) -> None:
-        """Switch parquet viewer tabs with 1/2/3 keys."""
+        """Switch viewer tabs with 1/2/3 keys (parquet and CSV viewers)."""
         if not self._preview_is_open():
             return
-        from ncview.viewers.parquet_viewer import ParquetViewer
         from textual.widgets import TabbedContent, DataTable
+        # Find any viewer with tabbed content
+        preview = self.query_one("#preview", PreviewPanel)
         try:
-            pv = self.query_one(ParquetViewer)
+            tc = preview.query_one(TabbedContent)
         except Exception:
             return
-        tc = pv.query_one(TabbedContent)
-        tab_map = {"1": "data-tab", "2": "schema-tab", "3": "stats-tab"}
-        tab_id = tab_map.get(tab_num)
+        # Map tab numbers to tab IDs — try parquet first, then CSV
+        pq_map = {"1": "data-tab", "2": "schema-tab", "3": "stats-tab"}
+        csv_map = {"1": "csv-data-tab", "2": "csv-schema-tab", "3": "csv-stats-tab"}
+        tab_id = pq_map.get(tab_num)
         if tab_id:
-            tc.active = tab_id
-            # Refocus DataTable when switching to data tab
-            if tab_id == "data-tab":
-                try:
-                    pv.query_one(DataTable).focus()
-                except Exception:
-                    pass
+            try:
+                tc.active = tab_id
+            except Exception:
+                # Not a parquet viewer, try CSV tab IDs
+                tab_id = csv_map.get(tab_num)
+                if tab_id:
+                    try:
+                        tc.active = tab_id
+                    except Exception:
+                        return
+        # Refocus DataTable when switching to data tab
+        if tab_num == "1":
+            try:
+                preview.query_one(DataTable).focus()
+            except Exception:
+                pass
 
     @on(DirectoryChanged)
     def _on_directory_changed(self, event: DirectoryChanged) -> None:

@@ -72,7 +72,7 @@ _EXT_TO_LEXER: dict[str, str] = {
 
 # All extensions this viewer handles
 _ALL_EXTENSIONS = {
-    ".txt", ".log", ".csv", ".tsv", ".env", ".gitignore", ".dockerignore",
+    ".txt", ".log", ".env", ".gitignore", ".dockerignore",
     ".editorconfig", ".properties", ".lock",
 } | set(_EXT_TO_LEXER.keys())
 

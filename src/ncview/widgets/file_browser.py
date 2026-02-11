@@ -97,6 +97,8 @@ class FileBrowser(Widget):
         ("slash", "start_search", "Search"),
         ("e", "open_editor", "Editor"),
         ("E", "open_editor_path", "Edit path"),  # noqa: E741
+        ("n", "search_next", "Next match"),
+        ("N", "search_prev", "Prev match"),  # noqa: E741
         ("y", "yank_path", "Copy path"),
         ("d", "delete", "Delete"),
         ("t", "touch_file", "Touch"),
@@ -114,6 +116,10 @@ class FileBrowser(Widget):
         self._input_mode = InputMode.NONE
         self._rename_path: Path | None = None
         self._path_map: dict[str, Path] = {}
+        self._search_query = ""
+        self._search_matches: list[int] = []
+        self._search_index = -1
+        self._base_subtitle = ""
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
@@ -333,7 +339,14 @@ class FileBrowser(Widget):
         count_dirs = len(dir_names)
         count_files = len(entries) - count_dirs
         total = count_dirs + count_files
-        self.border_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}"
+        self._base_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}"
+        self._refresh_subtitle()
+
+        # Clear search state on directory change
+        self._search_query = ""
+        self._search_matches = []
+        self._search_index = -1
+        self._update_search_hint(False)
 
         # Post directory changed
         self.post_message(DirectoryChanged(self.current_dir))
@@ -424,18 +437,65 @@ class FileBrowser(Widget):
         query = event.value.lower()
         self._finish_input()
         if not query:
+            self._search_query = ""
+            self._search_matches = []
+            self._search_index = -1
             return
-        # Check ".." entry first
         dt = self.query_one("#file-list", DataTable)
         has_parent = self.current_dir != Path(self.current_dir.root)
-        if has_parent and query in "..":
-            dt.move_cursor(row=0)
-            return
         offset = 1 if has_parent else 0
+        # Build list of all matching row indices
+        matches: list[int] = []
+        if has_parent and query in "..":
+            matches.append(0)
         for i, entry in enumerate(self._entries):
             if query in entry.name.lower():
-                dt.move_cursor(row=i + offset)
-                break
+                matches.append(i + offset)
+        self._search_query = query
+        self._search_matches = matches
+        if matches:
+            self._search_index = 0
+            dt.move_cursor(row=matches[0])
+        else:
+            self._search_index = -1
+        self._refresh_subtitle()
+        self._update_search_hint(bool(matches))
+
+    def action_search_next(self) -> None:
+        """Jump to the next search match (n)."""
+        if not self._search_matches:
+            return
+        self._search_index = (self._search_index + 1) % len(self._search_matches)
+        dt = self.query_one("#file-list", DataTable)
+        dt.move_cursor(row=self._search_matches[self._search_index])
+        self._refresh_subtitle()
+
+    def action_search_prev(self) -> None:
+        """Jump to the previous search match (N)."""
+        if not self._search_matches:
+            return
+        self._search_index = (self._search_index - 1) % len(self._search_matches)
+        dt = self.query_one("#file-list", DataTable)
+        dt.move_cursor(row=self._search_matches[self._search_index])
+        self._refresh_subtitle()
+
+    def _refresh_subtitle(self) -> None:
+        """Rebuild border subtitle, appending search info if active."""
+        if self._search_matches:
+            search_info = f" | /{self._search_query} [{self._search_index + 1}/{len(self._search_matches)}]"
+        elif self._search_query:
+            search_info = f" | /{self._search_query} [no matches]"
+        else:
+            search_info = ""
+        self.border_subtitle = self._base_subtitle + search_info
+
+    def _update_search_hint(self, active: bool) -> None:
+        """Toggle n/N hint in the status bar."""
+        from ncview.widgets.status_bar import StatusBar
+        try:
+            self.app.query_one("#status-bar", StatusBar).search_active = active
+        except Exception:
+            pass
 
     def action_open_editor(self) -> None:
         path = self._get_highlighted_path()

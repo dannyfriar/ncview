@@ -26,10 +26,17 @@ class StatusBar(Widget):
     """
 
     mode = reactive("browser")
+    search_active = reactive(False)
 
-    _BROWSER_LINE1 = [
+    _BROWSER_LINE1_BASE = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
+        ("App", [("p", "pins"), ("i", "ipython"), ("q", "quit")]),
+    ]
+
+    _BROWSER_LINE1_SEARCH = [
+        ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
+        ("Filter", [("/", "search"), ("n/N", "next/prev"), (".", "hidden"), ("s", "sort")]),
         ("App", [("p", "pins"), ("i", "ipython"), ("q", "quit")]),
     ]
 
@@ -56,6 +63,9 @@ class StatusBar(Widget):
     def watch_mode(self) -> None:
         self._render_hints()
 
+    def watch_search_active(self) -> None:
+        self._render_hints()
+
     @staticmethod
     def _build_line(hints: list) -> Text:
         text = Text()
@@ -74,7 +84,8 @@ class StatusBar(Widget):
         if self.mode == "preview":
             line1, line2 = self._PREVIEW_LINE1, self._PREVIEW_LINE2
         else:
-            line1, line2 = self._BROWSER_LINE1, self._BROWSER_LINE2
+            line1 = self._BROWSER_LINE1_SEARCH if self.search_active else self._BROWSER_LINE1_BASE
+            line2 = self._BROWSER_LINE2
         try:
             self.query_one("#status-line1", Static).update(self._build_line(line1))
             self.query_one("#status-line2", Static).update(self._build_line(line2))

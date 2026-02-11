@@ -322,19 +322,12 @@ class FileBrowser(Widget):
         if path is None:
             return
         abs_path = str(path.resolve())
-        import subprocess
-        try:
-            subprocess.run(["pbcopy"], input=abs_path.encode(), check=True)
-        except FileNotFoundError:
-            # Linux fallback
-            try:
-                subprocess.run(["xclip", "-selection", "clipboard"], input=abs_path.encode(), check=True)
-            except FileNotFoundError:
-                try:
-                    subprocess.run(["xsel", "--clipboard", "--input"], input=abs_path.encode(), check=True)
-                except FileNotFoundError:
-                    self.notify("No clipboard tool found", severity="error")
-                    return
+        import base64
+        import sys
+        # OSC 52 escape sequence — works over SSH, handled by the local terminal
+        encoded = base64.b64encode(abs_path.encode()).decode()
+        sys.stdout.write(f"\033]52;c;{encoded}\a")
+        sys.stdout.flush()
         self.notify(f"Copied: {abs_path}", severity="information")
 
     def action_delete(self) -> None:

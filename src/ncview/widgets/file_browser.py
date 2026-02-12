@@ -33,6 +33,7 @@ class InputMode(Enum):
     TOUCH = "touch"
     RENAME = "rename"
     MKDIR = "mkdir"
+    SHELL = "shell"
 
 
 _INPUT_IDS: dict[InputMode, str] = {
@@ -41,6 +42,7 @@ _INPUT_IDS: dict[InputMode, str] = {
     InputMode.TOUCH: "touch-input",
     InputMode.RENAME: "rename-input",
     InputMode.MKDIR: "mkdir-input",
+    InputMode.SHELL: "shell-input",
 }
 
 
@@ -106,6 +108,7 @@ class FileBrowser(Widget):
         ("M", "mkdir", "Mkdir"),  # noqa: E741
         ("~", "go_home", "Home"),
         ("ctrl+o", "go_back", "Back"),
+        ("%", "shell_command", "Run command"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -131,6 +134,7 @@ class FileBrowser(Widget):
         yield Input(placeholder="New file name...", id="touch-input")
         yield Input(placeholder="Rename to...", id="rename-input")
         yield Input(placeholder="New directory name...", id="mkdir-input")
+        yield Input(placeholder="Command ({} = file path)...", id="shell-input")
 
     def on_mount(self) -> None:
         self._load_directory()
@@ -631,6 +635,41 @@ class FileBrowser(Widget):
             prev = self._dir_stack.pop()
             self.current_dir = prev
             self._load_directory()
+
+    def action_shell_command(self) -> None:
+        """Open input to run a shell command on the highlighted file."""
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        self._input_mode = InputMode.SHELL
+        shell_input = self.query_one("#shell-input", Input)
+        shell_input.value = ""
+        shell_input.styles.display = "block"
+        shell_input.focus()
+
+    @on(Input.Submitted, "#shell-input")
+    def _on_shell_submitted(self, event: Input.Submitted) -> None:
+        cmd = event.value.strip()
+        self._finish_input()
+        if not cmd:
+            return
+        path = self._get_highlighted_path()
+        if path is None:
+            return
+        import shlex
+        import subprocess
+        file_path = shlex.quote(str(path))
+        # Replace {} with the file path, or append it if no {} present
+        if "{}" in cmd:
+            full_cmd = cmd.replace("{}", file_path)
+        else:
+            full_cmd = f"{cmd} {file_path}"
+        with self.app.suspend():
+            print(f"\033[1m$ {full_cmd}\033[0m")
+            subprocess.call(full_cmd, shell=True, cwd=str(self.current_dir))
+            print()
+            input("\033[2mpress Enter to continue\033[0m")
+        self._load_directory()
 
     def action_yank_path(self) -> None:
         """Copy the highlighted file's absolute path to the system clipboard."""

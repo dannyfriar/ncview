@@ -41,7 +41,7 @@ class StatusBar(Widget):
     ]
 
     _BROWSER_LINE2 = [
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy"), ("d", "delete")]),
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy"), ("d", "delete"), ("%", "shell")]),
     ]
 
     _PREVIEW_LINE1 = [

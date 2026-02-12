@@ -113,7 +113,7 @@ class FileBrowser(Widget):
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self.current_dir = (start_path or Path.cwd()).resolve()
+        self.current_dir = (start_path or Path.cwd()).absolute()
         self._load_gen = 0
         self._entries: list[Path] = []
         self._show_hidden = False
@@ -386,7 +386,7 @@ class FileBrowser(Widget):
 
     def _navigate_to(self, path: Path) -> None:
         """Change to a new directory."""
-        path = path.resolve()
+        path = path.absolute()
         if path.is_dir() and path != self.current_dir:
             self._dir_stack.append(self.current_dir)
             self.current_dir = path
@@ -527,7 +527,7 @@ class FileBrowser(Widget):
         self._finish_input()
         if not file_path:
             return
-        path = Path(file_path).resolve()
+        path = Path(file_path).absolute()
         if path.is_dir():
             self._navigate_to(path)
             return
@@ -676,7 +676,7 @@ class FileBrowser(Widget):
         path = self._get_highlighted_path()
         if path is None:
             return
-        abs_path = str(path.resolve())
+        abs_path = str(path.absolute())
         copy_to_clipboard(abs_path)
         self.notify(f"Copied: {abs_path}", severity="information")
 

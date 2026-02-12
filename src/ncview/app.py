@@ -337,7 +337,7 @@ class NcviewApp(App):
 
 def run(start: str = ".") -> None:
     """Run the ncview app."""
-    path = Path(start).resolve()
+    path = Path(start).absolute()
     if not path.exists():
         import sys
         print(f"Error: {path} does not exist", file=sys.stderr)

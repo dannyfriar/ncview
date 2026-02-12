@@ -83,15 +83,8 @@ class PathBar(Widget):
         self, path: Path, branch: str | None = None, dirty: bool | None = None,
     ) -> Text:
         """Build the bar text from path and optional git info."""
-        parts = path.parts
         text = Text()
-        for i, part in enumerate(parts):
-            if i > 0:
-                text.append(" / ", style="#75715e")
-            if i == len(parts) - 1:
-                text.append(part, style="bold #a6e22e")
-            else:
-                text.append(part, style="#75715e")
+        text.append(str(path), style="bold #a6e22e")
 
         tags = Text()
         venv = _virtualenv_name()
@@ -115,7 +108,7 @@ class PathBar(Widget):
         return text
 
     def update_path(self, path: Path) -> None:
-        self._path = path.resolve()
+        self._path = path.absolute()
         # Render immediately without git info (no latency)
         text = self._render_bar(self._path)
         try:

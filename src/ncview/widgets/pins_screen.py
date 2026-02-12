@@ -11,7 +11,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
-from ncview.utils.clipboard import osc52_copy
+from ncview.utils.clipboard import copy_to_clipboard
 from ncview.utils.pins import Pin, add_pin, load_pins, remove_pin
 
 
@@ -182,7 +182,7 @@ class PinsScreen(ModalScreen[Path | None]):
         pin_path = lv.highlighted_child.name
         if not pin_path:
             return
-        osc52_copy(pin_path)
+        copy_to_clipboard(pin_path)
         self.app.notify(f"Copied: {pin_path}", severity="information")
 
     def action_edit_pin(self) -> None:

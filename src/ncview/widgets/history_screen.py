@@ -11,7 +11,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Label, ListItem, ListView, Static
 
-from ncview.utils.clipboard import osc52_copy
+from ncview.utils.clipboard import copy_to_clipboard
 from ncview.utils.history import load_history
 
 
@@ -158,7 +158,7 @@ class HistoryScreen(ModalScreen[Path | None]):
             return
         path_str = lv.highlighted_child.name
         if path_str:
-            osc52_copy(path_str)
+            copy_to_clipboard(path_str)
             self.app.notify(f"Copied: {path_str}", severity="information")
 
     def action_cancel(self) -> None:

@@ -16,7 +16,7 @@ from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import DataTable, Input
 
-from ncview.utils.clipboard import osc52_copy
+from ncview.utils.clipboard import copy_to_clipboard
 from ncview.utils.file_info import file_icon, human_size
 
 
@@ -628,7 +628,7 @@ class FileBrowser(Widget):
         if path is None:
             return
         abs_path = str(path.resolve())
-        osc52_copy(abs_path)
+        copy_to_clipboard(abs_path)
         self.notify(f"Copied: {abs_path}", severity="information")
 
     def action_delete(self) -> None:

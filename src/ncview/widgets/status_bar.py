@@ -29,13 +29,13 @@ class StatusBar(Widget):
     search_active = reactive(False)
 
     _BROWSER_LINE1_BASE = [
-        ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
+        ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end"), ("\u2303o", "back")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort")]),
         ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]
 
     _BROWSER_LINE1_SEARCH = [
-        ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end")]),
+        ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end"), ("\u2303o", "back")]),
         ("Filter", [("/", "search"), ("n/N", "next/prev"), (".", "hidden"), ("s", "sort")]),
         ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]

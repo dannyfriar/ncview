@@ -105,6 +105,7 @@ class FileBrowser(Widget):
         ("r", "rename", "Rename"),
         ("M", "mkdir", "Mkdir"),  # noqa: E741
         ("~", "go_home", "Home"),
+        ("ctrl+o", "go_back", "Back"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -121,6 +122,7 @@ class FileBrowser(Widget):
         self._search_matches: list[int] = []
         self._search_index = -1
         self._base_subtitle = ""
+        self._dir_stack: list[Path] = []
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
@@ -381,7 +383,8 @@ class FileBrowser(Widget):
     def _navigate_to(self, path: Path) -> None:
         """Change to a new directory."""
         path = path.resolve()
-        if path.is_dir():
+        if path.is_dir() and path != self.current_dir:
+            self._dir_stack.append(self.current_dir)
             self.current_dir = path
             self._load_directory()
 
@@ -621,6 +624,13 @@ class FileBrowser(Widget):
     def action_go_home(self) -> None:
         """Navigate to the home directory."""
         self._navigate_to(Path.home())
+
+    def action_go_back(self) -> None:
+        """Return to the previously visited directory."""
+        if self._dir_stack:
+            prev = self._dir_stack.pop()
+            self.current_dir = prev
+            self._load_directory()
 
     def action_yank_path(self) -> None:
         """Copy the highlighted file's absolute path to the system clipboard."""

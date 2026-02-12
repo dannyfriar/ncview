@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import stat
 import subprocess
 from enum import Enum
 from pathlib import Path
@@ -24,6 +25,16 @@ class SortKey(Enum):
     NAME = "name"
     SIZE = "size"
     MODIFIED = "modified"
+
+
+def _format_perms(mode: int) -> str:
+    """Format st_mode into rwxrwxrwx string."""
+    bits = (
+        (stat.S_IRUSR, "r"), (stat.S_IWUSR, "w"), (stat.S_IXUSR, "x"),
+        (stat.S_IRGRP, "r"), (stat.S_IWGRP, "w"), (stat.S_IXGRP, "x"),
+        (stat.S_IROTH, "r"), (stat.S_IWOTH, "w"), (stat.S_IXOTH, "x"),
+    )
+    return "".join(c if mode & b else "-" for b, c in bits)
 
 
 class InputMode(Enum):
@@ -109,6 +120,7 @@ class FileBrowser(Widget):
         ("~", "go_home", "Home"),
         ("ctrl+o", "go_back", "Back"),
         ("%", "shell_command", "Run command"),
+        ("x", "toggle_perms", "Permissions"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -126,6 +138,7 @@ class FileBrowser(Widget):
         self._search_index = -1
         self._base_subtitle = ""
         self._dir_stack: list[Path] = []
+        self._show_perms = False
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
@@ -197,14 +210,13 @@ class FileBrowser(Widget):
             except OSError:
                 file_entries.append(e)
 
-        # Cache stat results once per entry for sorting and sizes
+        # Cache stat results once per entry for sorting, sizes, and permissions
         stat_cache: dict[str, os.stat_result] = {}
-        if self._sort_key in (SortKey.SIZE, SortKey.MODIFIED):
-            for e in scan:
-                try:
-                    stat_cache[e.name] = e.stat(follow_symlinks=True)
-                except OSError:
-                    pass
+        for e in scan:
+            try:
+                stat_cache[e.name] = e.stat(follow_symlinks=True)
+            except OSError:
+                pass
 
         sort_key = self._sort_key
         def _sort_func(entry: os.DirEntry) -> object:
@@ -233,13 +245,28 @@ class FileBrowser(Widget):
             except OSError:
                 pass
 
+        perms: dict[str, str] = {}
+        if self._show_perms:
+            for e in scan:
+                st = stat_cache.get(e.name)
+                if st:
+                    perms[e.name] = _format_perms(st.st_mode)
+
+        symlinks: dict[str, str] = {}
+        for e in scan:
+            try:
+                if e.is_symlink():
+                    symlinks[e.name] = os.readlink(e.path)
+            except OSError:
+                pass
+
         # Git status — only if we're in a git repo, with a timeout
         git_status = self._get_git_status()
 
         # Drop stale results if the user navigated away while we were loading
         if gen != self._load_gen:
             return
-        self.app.call_from_thread(self._populate_list, gen, all_entries, dir_names, sizes, git_status)
+        self.app.call_from_thread(self._populate_list, gen, all_entries, dir_names, sizes, git_status, perms, symlinks)
 
     def _get_git_status(self) -> dict[str, str]:
         """Get git status for files in the current directory. Returns empty dict if not a repo."""
@@ -281,6 +308,8 @@ class FileBrowser(Widget):
         dir_names: set[str],
         sizes: dict[str, int],
         git_status: dict[str, str] | None = None,
+        perms: dict[str, str] | None = None,
+        symlinks: dict[str, str] | None = None,
     ) -> None:
         """Rebuild the DataTable with current entries."""
         # Discard if a newer load has already been requested
@@ -291,10 +320,13 @@ class FileBrowser(Widget):
         dt = self.query_one("#file-list", DataTable)
         dt.clear(columns=True)
 
+        show_perms = bool(perms)
         dt.add_column("Name", key="name")
+        if show_perms:
+            dt.add_column("Perms", key="perms")
         dt.add_column("Size", key="size")
 
-        rows: list[tuple[Text, str]] = []
+        rows: list[tuple] = []
         keys: list[str] = []
 
         # Add parent directory entry
@@ -302,7 +334,8 @@ class FileBrowser(Widget):
             label = Text()
             label.append("\uf07b ", style="bold #e6db74")
             label.append("..", style="bold #e6db74")
-            rows.append((label, ""))
+            row = (label, "", "") if show_perms else (label, "")
+            rows.append(row)
             keys.append("..")
             self._path_map[".."] = self.current_dir.parent
 
@@ -333,7 +366,14 @@ class FileBrowser(Widget):
             else:
                 label.append(entry.name, style="#f8f8f2")
                 size_text = human_size(sizes[entry.name]) if entry.name in sizes else ""
-            rows.append((label, size_text))
+            if symlinks and entry.name in symlinks:
+                label.append(" \u2192 ", style="#75715e")
+                label.append(symlinks[entry.name], style="#75715e")
+            perm_text = perms.get(entry.name, "") if show_perms else None
+            if show_perms:
+                rows.append((label, perm_text, size_text))
+            else:
+                rows.append((label, size_text))
             keys.append(entry.name)
             self._path_map[entry.name] = entry
 
@@ -425,6 +465,10 @@ class FileBrowser(Widget):
 
     def action_toggle_hidden(self) -> None:
         self._show_hidden = not self._show_hidden
+        self._load_directory()
+
+    def action_toggle_perms(self) -> None:
+        self._show_perms = not self._show_perms
         self._load_directory()
 
     def action_cycle_sort(self) -> None:

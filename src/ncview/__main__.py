@@ -42,6 +42,13 @@ def main() -> None:
         _handle_subcommand()
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "info":
+        from importlib.metadata import version
+        from ncview.utils.config import config_dir
+        print(f"ncview {version('ncview')}")
+        print(f"config: {config_dir()}")
+        return
+
     parser = argparse.ArgumentParser(
         prog="ncview",
         description="Terminal file browser with vim keybindings",

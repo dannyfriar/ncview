@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-HISTORY_FILE = Path.home() / ".config" / "ncview" / "history.json"
+from ncview.utils.config import config_dir
+
+HISTORY_FILE = config_dir() / "history.json"
 MAX_HISTORY = 25
 
 

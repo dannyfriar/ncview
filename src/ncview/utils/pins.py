@@ -1,4 +1,4 @@
-"""Load and save pinned directories from ~/.config/ncview/pins.json."""
+"""Load and save pinned directories."""
 
 from __future__ import annotations
 
@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 from typing import TypedDict
 
-PINS_FILE = Path.home() / ".config" / "ncview" / "pins.json"
+from ncview.utils.config import config_dir
+
+PINS_FILE = config_dir() / "pins.json"
 
 
 class Pin(TypedDict):

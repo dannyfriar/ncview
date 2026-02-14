@@ -15,10 +15,16 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
-[project.optional-dependencies]
-dev = [
+[tool.hatch.envs.dev]
+dependencies = [
     "textual-dev>=1.0.0",
+    "twine>=5.0.0",
+    "build>=1.0.0",
 ]
+detached = true
+
+[tool.hatch.envs.dev.scripts]
+deploy = ["rm -rf dist/ build/ src/*.egg-info", "python -m build", "twine upload dist/*"]
 
 [project.scripts]
 ncview = "ncview.__main__:main"

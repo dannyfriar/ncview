@@ -82,8 +82,7 @@ class TextViewer(BaseViewer):
 
     DEFAULT_CSS = """
     TextViewer {
-        height: 1fr;
-        overflow-y: auto;
+        height: auto;
     }
     TextViewer > Static {
         width: 1fr;

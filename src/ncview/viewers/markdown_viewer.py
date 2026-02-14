@@ -17,8 +17,7 @@ class MarkdownViewer(BaseViewer):
 
     DEFAULT_CSS = """
     MarkdownViewer {
-        height: 1fr;
-        overflow-y: auto;
+        height: auto;
     }
     MarkdownViewer > Static {
         width: 1fr;

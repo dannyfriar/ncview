@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import shutil
 import stat
@@ -45,6 +46,7 @@ class InputMode(Enum):
     RENAME = "rename"
     MKDIR = "mkdir"
     SHELL = "shell"
+    FILTER = "filter"
 
 
 _INPUT_IDS: dict[InputMode, str] = {
@@ -54,6 +56,7 @@ _INPUT_IDS: dict[InputMode, str] = {
     InputMode.RENAME: "rename-input",
     InputMode.MKDIR: "mkdir-input",
     InputMode.SHELL: "shell-input",
+    InputMode.FILTER: "filter-input",
 }
 
 
@@ -105,7 +108,7 @@ class FileBrowser(Widget):
         ("h", "parent_dir", "Parent"),
         ("g", "jump_top", "Top"),
         ("G", "jump_bottom", "Bottom"),  # noqa: E741
-        ("period", "toggle_hidden", "Toggle hidden"),
+        ("full_stop", "toggle_hidden", "Toggle hidden"),
         ("s", "cycle_sort", "Cycle sort"),
         ("slash", "start_search", "Search"),
         ("e", "open_editor", "Editor"),
@@ -121,6 +124,7 @@ class FileBrowser(Widget):
         ("ctrl+o", "go_back", "Back"),
         ("%", "shell_command", "Run command"),
         ("x", "toggle_perms", "Permissions"),
+        ("f", "start_filter", "Filter"),
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -139,6 +143,9 @@ class FileBrowser(Widget):
         self._base_subtitle = ""
         self._dir_stack: list[Path] = []
         self._show_perms = False
+        self._focus_name: str | None = None
+        self._dir_mtime: float = 0.0
+        self._filter_pattern: str = ""
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
@@ -148,9 +155,20 @@ class FileBrowser(Widget):
         yield Input(placeholder="Rename to...", id="rename-input")
         yield Input(placeholder="New directory name...", id="mkdir-input")
         yield Input(placeholder="Command ({} = file path)...", id="shell-input")
+        yield Input(placeholder="Filter regex (e.g. \\.py$, test_.*, \\.(js|ts)$)...", id="filter-input")
 
     def on_mount(self) -> None:
         self._load_directory()
+        self.set_interval(2.0, self._check_for_changes)
+
+    def _check_for_changes(self) -> None:
+        """Poll directory mtime and reload if files were added/removed."""
+        try:
+            mtime = os.stat(self.current_dir).st_mtime
+            if mtime != self._dir_mtime and self._dir_mtime != 0.0:
+                self._load_directory()
+        except OSError:
+            pass
 
     def on_key(self, event: Key) -> None:
         """Intercept keys before DataTable eats them."""
@@ -189,6 +207,11 @@ class FileBrowser(Widget):
         """Load directory contents in a background thread."""
         self._load_gen += 1
         gen = self._load_gen
+
+        try:
+            self._dir_mtime = os.stat(self.current_dir).st_mtime
+        except OSError:
+            self._dir_mtime = 0.0
 
         try:
             scan = list(os.scandir(self.current_dir))
@@ -230,6 +253,14 @@ class FileBrowser(Widget):
 
         dir_entries.sort(key=_sort_func)
         file_entries.sort(key=_sort_func)
+
+        # Apply file type filter (directories always shown)
+        if self._filter_pattern:
+            try:
+                regex = re.compile(self._filter_pattern, re.IGNORECASE)
+                file_entries = [e for e in file_entries if regex.search(e.name)]
+            except re.error:
+                pass
 
         # Build Path lists, dir names set, and sizes dict
         dirs = [Path(e.path) for e in dir_entries]
@@ -401,7 +432,8 @@ class FileBrowser(Widget):
         count_dirs = len(dir_names)
         count_files = len(entries) - count_dirs
         total = count_dirs + count_files
-        self._base_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}"
+        filter_label = f" | filter:{self._filter_pattern}" if self._filter_pattern else ""
+        self._base_subtitle = f"{total} items ({count_dirs} dirs, {count_files} files) | sort:{sort_label} | hidden:{hidden_label}{filter_label}"
         self._refresh_subtitle()
 
         # Clear search state on directory change
@@ -413,9 +445,16 @@ class FileBrowser(Widget):
         # Post directory changed
         self.post_message(DirectoryChanged(self.current_dir))
 
-        # Auto-highlight first row
+        # Restore cursor to previously visited directory, or default to first row
+        target_row = 0
+        if self._focus_name:
+            for i, key in enumerate(keys):
+                if key == self._focus_name:
+                    target_row = i
+                    break
+            self._focus_name = None
         if dt.row_count > 0:
-            dt.move_cursor(row=0)
+            dt.move_cursor(row=target_row)
 
     @on(DataTable.RowHighlighted)
     def _on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
@@ -444,6 +483,11 @@ class FileBrowser(Widget):
         path = path.absolute()
         if path.is_dir() and path != self.current_dir:
             self._dir_stack.append(self.current_dir)
+            # Remember current dir name so we can highlight it when going back
+            if path == self.current_dir.parent:
+                self._focus_name = self.current_dir.name
+            else:
+                self._focus_name = None
             self.current_dir = path
             self._load_directory()
 
@@ -691,9 +735,25 @@ class FileBrowser(Widget):
     def action_go_back(self) -> None:
         """Return to the previously visited directory."""
         if self._dir_stack:
+            self._focus_name = self.current_dir.name
             prev = self._dir_stack.pop()
             self.current_dir = prev
             self._load_directory()
+
+    def action_start_filter(self) -> None:
+        """Open input to filter files by pattern."""
+        self._input_mode = InputMode.FILTER
+        filter_input = self.query_one("#filter-input", Input)
+        filter_input.value = self._filter_pattern
+        filter_input.styles.display = "block"
+        filter_input.focus()
+
+    @on(Input.Submitted, "#filter-input")
+    def _on_filter_submitted(self, event: Input.Submitted) -> None:
+        pattern = event.value.strip()
+        self._finish_input()
+        self._filter_pattern = pattern
+        self._load_directory()
 
     def action_shell_command(self) -> None:
         """Open input to run a shell command on the highlighted file."""

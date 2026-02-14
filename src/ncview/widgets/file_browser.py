@@ -271,6 +271,18 @@ class FileBrowser(Widget):
     def _get_git_status(self) -> dict[str, str]:
         """Get git status for files in the current directory. Returns empty dict if not a repo."""
         try:
+            # Get the path prefix from repo root to current dir
+            prefix_result = subprocess.run(
+                ["git", "rev-parse", "--show-prefix"],
+                cwd=str(self.current_dir),
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if prefix_result.returncode != 0:
+                return {}
+            prefix = prefix_result.stdout.strip()  # e.g. "src/ncview/"
+
             result = subprocess.run(
                 ["git", "status", "--porcelain", "-unormal", "."],
                 cwd=str(self.current_dir),
@@ -292,6 +304,9 @@ class FileBrowser(Widget):
             # Unquote git C-style quoting for paths with special chars
             if filepath.startswith('"') and filepath.endswith('"'):
                 filepath = filepath[1:-1].replace('\\"', '"').replace('\\\\', '\\')
+            # Strip repo-root prefix to get path relative to current dir
+            if prefix and filepath.startswith(prefix):
+                filepath = filepath[len(prefix):]
             # Only care about direct children of current dir
             name = filepath.split("/")[0]
             if name not in status_map:

@@ -52,6 +52,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="ncview",
         description="Terminal file browser with vim keybindings",
+        epilog="""\
+commands:
+  ncview [path]                browse a directory (default: .)
+  ncview pin <path> [-n name]  pin a directory for quick access
+  ncview unpin <path>          remove a pinned directory
+  ncview info                  show version and config path""",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "browse_path", nargs="?", default=".", metavar="path",

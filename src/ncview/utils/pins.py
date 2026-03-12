@@ -12,8 +12,9 @@ PINS_FILE = config_dir() / "pins.json"
 
 
 class Pin(TypedDict):
-    path: str
+    path: str       # resolved (canonical) path — used for deduplication
     name: str
+    original: str   # absolute path as navigated (preserves symlinks) — used for display/nav
 
 
 def load_pins() -> list[Pin]:
@@ -26,10 +27,11 @@ def load_pins() -> list[Pin]:
             pins: list[Pin] = []
             for entry in data:
                 if isinstance(entry, dict) and "path" in entry:
-                    pins.append(Pin(path=entry["path"], name=entry.get("name", "")))
+                    p = entry["path"]
+                    pins.append(Pin(path=p, name=entry.get("name", ""), original=entry.get("original", p)))
                 elif isinstance(entry, str):
                     # Backwards compat: bare string -> unnamed pin
-                    pins.append(Pin(path=entry, name=""))
+                    pins.append(Pin(path=entry, name="", original=entry))
             return pins
     except (json.JSONDecodeError, OSError):
         pass
@@ -45,13 +47,14 @@ def _save_pins(pins: list[Pin]) -> None:
 def add_pin(path: str, name: str = "") -> bool:
     """Add or overwrite a pin. Returns True if an existing pin was overwritten."""
     resolved = str(Path(path).resolve())
+    original = str(Path(path).absolute())
     pins = load_pins()
     for i, p in enumerate(pins):
         if p["path"] == resolved:
-            pins[i] = Pin(path=resolved, name=name)
+            pins[i] = Pin(path=resolved, name=name, original=original)
             _save_pins(pins)
             return True
-    pins.append(Pin(path=resolved, name=name))
+    pins.append(Pin(path=resolved, name=name, original=original))
     _save_pins(pins)
     return False
 

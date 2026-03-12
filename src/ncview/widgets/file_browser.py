@@ -234,8 +234,11 @@ class FileBrowser(Widget):
                 file_entries.append(e)
 
         # Cache stat results once per entry for sorting, sizes, and permissions
+        # When sorting by name with no perms, only stat file entries (dirs don't need size)
+        need_all_stats = (self._sort_key != SortKey.NAME) or self._show_perms
+        entries_to_stat = scan if need_all_stats else file_entries
         stat_cache: dict[str, os.stat_result] = {}
-        for e in scan:
+        for e in entries_to_stat:
             try:
                 stat_cache[e.name] = e.stat(follow_symlinks=True)
             except OSError:
@@ -294,10 +297,61 @@ class FileBrowser(Widget):
         # Git status — only if we're in a git repo, with a timeout
         git_status = self._get_git_status()
 
+        # Build Rich Text rows in the background thread (Text objects are pure data)
+        show_perms = bool(perms)
+        rows: list[tuple] = []
+        keys: list[str] = []
+
+        # Parent directory entry
+        if self.current_dir != Path(self.current_dir.root):
+            label = Text()
+            label.append("\uf07b ", style="bold #e6db74")
+            label.append("..", style="bold #e6db74")
+            row = (label, "", "") if show_perms else (label, "")
+            rows.append(row)
+            keys.append("..")
+
+        has_git = git_status is not None
+        for entry in all_entries:
+            is_dir = entry.name in dir_names
+            label = Text()
+            # Git status marker
+            if has_git and entry.name in git_status:
+                xy = git_status[entry.name]
+                if xy == "??":
+                    label.append("? ", style="bold #a6e22e")
+                elif xy[0] in "MADRC":
+                    label.append("+ ", style="bold #a6e22e")
+                elif xy[1] == "M":
+                    label.append("~ ", style="bold #fd971f")
+                elif xy[1] == "D":
+                    label.append("- ", style="bold #f92672")
+                else:
+                    label.append("* ", style="bold #ae81ff")
+            elif has_git:
+                label.append("  ")
+            icon = file_icon(entry, is_dir=is_dir)
+            label.append(f"{icon} ")
+            if is_dir:
+                label.append(entry.name + "/", style="bold #66d9ef")
+                size_text = ""
+            else:
+                label.append(entry.name, style="#f8f8f2")
+                size_text = human_size(sizes[entry.name]) if entry.name in sizes else ""
+            if symlinks and entry.name in symlinks:
+                label.append(" \u2192 ", style="#75715e")
+                label.append(symlinks[entry.name], style="#75715e")
+            perm_text = perms.get(entry.name, "") if show_perms else None
+            if show_perms:
+                rows.append((label, perm_text, size_text))
+            else:
+                rows.append((label, size_text))
+            keys.append(entry.name)
+
         # Drop stale results if the user navigated away while we were loading
         if gen != self._load_gen:
             return
-        self.app.call_from_thread(self._populate_list, gen, all_entries, dir_names, sizes, git_status, perms, symlinks)
+        self.app.call_from_thread(self._populate_list, gen, all_entries, dir_names, rows, keys, show_perms)
 
     def _get_git_status(self) -> dict[str, str]:
         """Get git status for files in the current directory. Returns empty dict if not a repo."""
@@ -352,12 +406,11 @@ class FileBrowser(Widget):
         gen: int,
         entries: list[Path],
         dir_names: set[str],
-        sizes: dict[str, int],
-        git_status: dict[str, str] | None = None,
-        perms: dict[str, str] | None = None,
-        symlinks: dict[str, str] | None = None,
+        rows: list[tuple],
+        keys: list[str],
+        show_perms: bool,
     ) -> None:
-        """Rebuild the DataTable with current entries."""
+        """Rebuild the DataTable with pre-built rows from the background thread."""
         # Discard if a newer load has already been requested
         if gen != self._load_gen:
             return
@@ -366,66 +419,21 @@ class FileBrowser(Widget):
         dt = self.query_one("#file-list", DataTable)
         dt.clear(columns=True)
 
-        show_perms = bool(perms)
         dt.add_column("Name", key="name")
         if show_perms:
             dt.add_column("Perms", key="perms")
         dt.add_column("Size", key="size")
 
-        rows: list[tuple] = []
-        keys: list[str] = []
-
-        # Add parent directory entry
+        # Build path map
         if self.current_dir != Path(self.current_dir.root):
-            label = Text()
-            label.append("\uf07b ", style="bold #e6db74")
-            label.append("..", style="bold #e6db74")
-            row = (label, "", "") if show_perms else (label, "")
-            rows.append(row)
-            keys.append("..")
             self._path_map[".."] = self.current_dir.parent
-
-        has_git = git_status is not None
         for entry in entries:
-            is_dir = entry.name in dir_names
-            label = Text()
-            # Git status marker
-            if has_git and entry.name in git_status:
-                xy = git_status[entry.name]
-                if xy == "??":
-                    label.append("? ", style="bold #a6e22e")
-                elif xy[0] in "MADRC":
-                    label.append("+ ", style="bold #a6e22e")
-                elif xy[1] == "M":
-                    label.append("~ ", style="bold #fd971f")
-                elif xy[1] == "D":
-                    label.append("- ", style="bold #f92672")
-                else:
-                    label.append("* ", style="bold #ae81ff")
-            elif has_git:
-                label.append("  ")
-            icon = file_icon(entry, is_dir=is_dir)
-            label.append(f"{icon} ")
-            if is_dir:
-                label.append(entry.name + "/", style="bold #66d9ef")
-                size_text = ""
-            else:
-                label.append(entry.name, style="#f8f8f2")
-                size_text = human_size(sizes[entry.name]) if entry.name in sizes else ""
-            if symlinks and entry.name in symlinks:
-                label.append(" \u2192 ", style="#75715e")
-                label.append(symlinks[entry.name], style="#75715e")
-            perm_text = perms.get(entry.name, "") if show_perms else None
-            if show_perms:
-                rows.append((label, perm_text, size_text))
-            else:
-                rows.append((label, size_text))
-            keys.append(entry.name)
             self._path_map[entry.name] = entry
 
-        # Batch add all rows at once
-        for row, key in zip(rows, keys):
-            dt.add_row(*row, key=key)
+        # Batch add rows with deferred screen refresh
+        with self.app.batch_update():
+            for row, key in zip(rows, keys):
+                dt.add_row(*row, key=key)
 
         sort_label = self._sort_key.value
         hidden_label = "shown" if self._show_hidden else "hidden"
@@ -821,15 +829,7 @@ class FileBrowser(Widget):
         def _on_result(confirmed: bool) -> None:
             if not confirmed:
                 return
-            try:
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
-                    path.unlink()
-                self.notify(f"Deleted {kind}: {name}", severity="information")
-                self._load_directory()
-            except OSError as exc:
-                self.notify(f"Delete failed: {exc}", severity="error")
+            self._do_delete(path, kind, name)
 
         self.app.push_screen(
             ConfirmScreen(
@@ -838,3 +838,20 @@ class FileBrowser(Widget):
             ),
             callback=_on_result,
         )
+
+    @work(thread=True)
+    def _do_delete(self, path: Path, kind: str, name: str) -> None:
+        """Delete a file or directory in a background thread."""
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            self.app.call_from_thread(
+                self.notify, f"Deleted {kind}: {name}", severity="information"
+            )
+            self.app.call_from_thread(self._load_directory)
+        except OSError as exc:
+            self.app.call_from_thread(
+                self.notify, f"Delete failed: {exc}", severity="error"
+            )

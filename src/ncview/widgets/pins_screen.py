@@ -17,14 +17,15 @@ from ncview.utils.pins import Pin, add_pin, load_pins, remove_pin
 
 def _pin_label(pin: Pin) -> Text:
     """Build a Rich label for a pin entry."""
+    display_path = pin.get("original", pin["path"])
     label = Text()
     label.append("\uf08d ", style="bold #fd971f")
     if pin["name"]:
         label.append(pin["name"], style="bold #e6db74")
         label.append("  ", style="#75715e")
-        label.append(pin["path"], style="#75715e")
+        label.append(display_path, style="#75715e")
     else:
-        label.append(pin["path"], style="bold #66d9ef")
+        label.append(display_path, style="bold #66d9ef")
     return label
 
 
@@ -99,7 +100,7 @@ class PinsScreen(ModalScreen[Path | None]):
 
     def compose(self) -> ComposeResult:
         self._pins = load_pins()
-        items = [ListItem(Label(_pin_label(pin)), name=pin["path"]) for pin in self._pins]
+        items = [ListItem(Label(_pin_label(pin)), name=pin.get("original", pin["path"])) for pin in self._pins]
         with Vertical():
             yield Static("Pinned Directories", id="pins-title")
             if not self._pins:
@@ -198,10 +199,10 @@ class PinsScreen(ModalScreen[Path | None]):
         pin_path = lv.highlighted_child.name
         if not pin_path:
             return
-        # Find the current name
+        # Find the current name — pin_path is the original (symlink-preserving) path
         pin_name = ""
         for pin in self._pins:
-            if pin["path"] == pin_path:
+            if pin.get("original", pin["path"]) == pin_path:
                 pin_name = pin["name"]
                 break
         self._edit_old_path = pin_path
@@ -238,13 +239,13 @@ class PinsScreen(ModalScreen[Path | None]):
         if not path_str:
             self._finish_add()
             return
-        path = Path(path_str).resolve()
+        path = Path(path_str).absolute()
         if not path.is_dir():
             self.app.notify(f"Not a directory: {path}", severity="error")
             return
         name = event.value.strip()
         # If editing and the path changed, remove the old pin first
-        if self._edit_old_path and str(path) != self._edit_old_path:
+        if self._edit_old_path and str(path.resolve()) != str(Path(self._edit_old_path).resolve()):
             remove_pin(self._edit_old_path)
         overwritten = add_pin(str(path), name=name)
         if self._edit_old_path:
@@ -278,7 +279,7 @@ class PinsScreen(ModalScreen[Path | None]):
         idx = lv.index or 0
         lv.clear()
         for pin in self._pins:
-            lv.append(ListItem(Label(_pin_label(pin)), name=pin["path"]))
+            lv.append(ListItem(Label(_pin_label(pin)), name=pin.get("original", pin["path"])))
         if lv.children:
             lv.index = min(idx, len(lv.children) - 1)
             lv.focus()
@@ -299,7 +300,7 @@ class PinsScreen(ModalScreen[Path | None]):
         # Find the display name for the confirm message
         display = pin_path
         for pin in self._pins:
-            if pin["path"] == pin_path and pin["name"]:
+            if pin.get("original", pin["path"]) == pin_path and pin["name"]:
                 display = f"{pin['name']} ({pin_path})"
                 break
 
@@ -317,7 +318,7 @@ class PinsScreen(ModalScreen[Path | None]):
                 self.dismiss(None)
                 return
             for pin in self._pins:
-                lv.append(ListItem(Label(_pin_label(pin)), name=pin["path"]))
+                lv.append(ListItem(Label(_pin_label(pin)), name=pin.get("original", pin["path"])))
             if lv.children:
                 lv.index = min(idx, len(lv.children) - 1)
 

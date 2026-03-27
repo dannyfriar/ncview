@@ -67,12 +67,12 @@ class CsvViewer(BaseViewer):
 
     def compose(self):
         yield Static(id="csv-info")
-        with TabbedContent("Data", "Schema", "Stats", initial="csv-data-tab"):
-            with TabPane("Data", id="csv-data-tab"):
+        with TabbedContent("1 Data", "2 Schema", "3 Stats", initial="csv-data-tab"):
+            with TabPane("1 Data", id="csv-data-tab"):
                 yield DataTable(id="csv-data-table", cursor_type="row")
-            with TabPane("Schema", id="csv-schema-tab"):
+            with TabPane("2 Schema", id="csv-schema-tab"):
                 yield Static(id="csv-schema-content", markup=False)
-            with TabPane("Stats", id="csv-stats-tab"):
+            with TabPane("3 Stats", id="csv-stats-tab"):
                 yield Static(
                     "Switch to this tab to compute statistics...",
                     id="csv-stats-content",

@@ -21,6 +21,7 @@ from ncview.viewers.base import BaseViewer
 
 DATA_PREVIEW_ROWS = 1_000
 STATS_ROWS = 10_000
+MAX_DISPLAY_COLS = 50
 
 
 class ParquetViewer(BaseViewer):
@@ -68,12 +69,12 @@ class ParquetViewer(BaseViewer):
 
     def compose(self):
         yield Static(id="pq-info")
-        with TabbedContent("Data", "Schema", "Stats", initial="data-tab"):
-            with TabPane("Data", id="data-tab"):
-                yield DataTable(id="data-table", cursor_type="row")
-            with TabPane("Schema", id="schema-tab"):
+        with TabbedContent("1 Schema", "2 Data", "3 Stats", initial="schema-tab"):
+            with TabPane("1 Schema", id="schema-tab"):
                 yield Static(id="schema-content", markup=False)
-            with TabPane("Stats", id="stats-tab"):
+            with TabPane("2 Data", id="data-tab"):
+                yield DataTable(id="data-table", cursor_type="row")
+            with TabPane("3 Stats", id="stats-tab"):
                 yield Static("Switch to this tab to compute statistics...", id="stats-content", markup=False)
 
     async def load_content(self) -> None:
@@ -134,18 +135,25 @@ class ParquetViewer(BaseViewer):
 
         dt = self.query_one("#data-table", DataTable)
         try:
-            df = pl.scan_parquet(self.path).head(DATA_PREVIEW_ROWS).collect()
+            scan = pl.scan_parquet(self.path)
+            all_cols = scan.collect_schema().names()
+            truncated = len(all_cols) > MAX_DISPLAY_COLS
+            display_cols = all_cols[:MAX_DISPLAY_COLS]
+            df = scan.select(display_cols).head(DATA_PREVIEW_ROWS).collect()
 
             def _add_columns():
                 dt.add_column("#", key="__row__")
                 for col_name in df.columns:
                     dt.add_column(col_name, key=col_name)
+                if truncated:
+                    dt.add_column(f"... +{len(all_cols) - MAX_DISPLAY_COLS} cols", key="__truncated__")
 
             self.app.call_from_thread(_add_columns)
 
             str_df = df.cast({col: pl.Utf8 for col in df.columns}).fill_null("null")
             raw_rows = str_df.rows()
-            rows = [tuple([str(i)] + list(r)) for i, r in enumerate(raw_rows)]
+            suffix = ("",) if truncated else ()
+            rows = [tuple([str(i)] + list(r) + list(suffix)) for i, r in enumerate(raw_rows)]
 
             def _add_rows():
                 dt.add_rows(rows)
@@ -165,10 +173,17 @@ class ParquetViewer(BaseViewer):
         try:
             self.app.call_from_thread(widget.update, Text("Computing statistics...", style="italic dim"))
 
-            df = pl.scan_parquet(self.path).head(STATS_ROWS).collect()
+            scan = pl.scan_parquet(self.path)
+            all_cols = scan.collect_schema().names()
+            display_cols = all_cols[:MAX_DISPLAY_COLS]
+            df = scan.select(display_cols).head(STATS_ROWS).collect()
             desc = df.describe()
 
-            table = RichTable(title=f"Statistics (first {STATS_ROWS:,} rows)", expand=True)
+            stats_title = f"Statistics (first {STATS_ROWS:,} rows"
+            if len(all_cols) > MAX_DISPLAY_COLS:
+                stats_title += f", first {MAX_DISPLAY_COLS} cols"
+            stats_title += ")"
+            table = RichTable(title=stats_title, expand=True)
             for col_name in desc.columns:
                 style = "bold cyan" if col_name == "statistic" else "white"
                 table.add_column(col_name, style=style)

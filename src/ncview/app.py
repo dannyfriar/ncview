@@ -293,7 +293,7 @@ class NcviewApp(App):
         except Exception:
             return
         # Map tab numbers to tab IDs — try parquet first, then CSV
-        pq_map = {"1": "data-tab", "2": "schema-tab", "3": "stats-tab"}
+        pq_map = {"1": "schema-tab", "2": "data-tab", "3": "stats-tab"}
         csv_map = {"1": "csv-data-tab", "2": "csv-schema-tab", "3": "csv-stats-tab"}
         tab_id = pq_map.get(tab_num)
         if tab_id:
@@ -308,7 +308,7 @@ class NcviewApp(App):
                     except Exception:
                         return
         # Refocus DataTable when switching to data tab
-        if tab_num == "1":
+        if tab_num == "2":
             try:
                 preview.query_one(DataTable).focus()
             except Exception:

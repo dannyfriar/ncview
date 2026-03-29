@@ -11,6 +11,19 @@ from ncview.utils.file_types import registry
 from ncview.viewers.base import BaseViewer
 
 
+class _PreviewScroll(VerticalScroll):
+    """VerticalScroll with vim-style j/k scrolling."""
+
+    BINDINGS = [
+        ("j", "scroll_down", "Down"),
+        ("k", "scroll_up", "Up"),
+        ("g", "scroll_home", "Top"),
+        ("G", "scroll_end", "Bottom"),  # noqa: E741
+        ("ctrl+d", "page_down", "Page down"),
+        ("ctrl+u", "page_up", "Page up"),
+    ]
+
+
 class PreviewPanel(Widget):
     """Hosts the currently active file viewer."""
 
@@ -30,7 +43,7 @@ class PreviewPanel(Widget):
         self._current_path: Path | None = None
 
     def compose(self):
-        vs = VerticalScroll(id="preview-scroll")
+        vs = _PreviewScroll(id="preview-scroll")
         vs.can_focus = True
         yield vs
 

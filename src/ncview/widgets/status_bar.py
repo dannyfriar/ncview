@@ -31,17 +31,17 @@ class StatusBar(Widget):
     _BROWSER_LINE1_BASE = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end"), ("\u2303o", "back")]),
         ("Filter", [("/", "search"), (".", "hidden"), ("s", "sort"), ("x", "perms"), ("f", "filter")]),
-        ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
+        ("App", [("P", "preview"), ("Tab", "switch pane"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]
 
     _BROWSER_LINE1_SEARCH = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end"), ("\u2303o", "back")]),
         ("Filter", [("/", "search"), ("n/N", "next/prev"), (".", "hidden"), ("s", "sort"), ("x", "perms"), ("f", "filter")]),
-        ("App", [("P", "split"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
+        ("App", [("P", "preview"), ("Tab", "switch pane"), ("p", "pins"), ("H", "history"), ("i", "ipython"), ("q", "quit")]),
     ]
 
     _BROWSER_LINE2 = [
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy"), ("d", "delete"), ("%", "shell")]),
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy"), ("d", "delete"), ("%", "shell command")]),
     ]
 
     _PREVIEW_LINE1 = [

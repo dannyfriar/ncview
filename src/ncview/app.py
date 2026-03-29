@@ -63,6 +63,7 @@ class NcviewApp(App):
         ("e", "preview_open_editor", "Editor"),
         ("p", "show_pins", "Pins"),
         ("P", "toggle_split", "Split preview"),  # noqa: E741
+        ("tab", "toggle_split_focus", "Switch pane"),
         ("H", "show_history", "History"),  # noqa: E741
         ("i", "open_ipython", "IPython"),
         ("1", "viewer_tab('1')", "Tab 1"),
@@ -104,6 +105,13 @@ class NcviewApp(App):
         """Toggle the split preview pane."""
         if self._preview_is_open():
             return
+        # If enabling split and highlighted item is a directory, notify and bail
+        if not self._split_view:
+            browser = self.query_one("#browser", FileBrowser)
+            path = browser._get_highlighted_path()
+            if path and not path.is_file():
+                self.notify("Directory — press Enter to open", severity="information")
+                return
         self._split_view = not self._split_view
         preview = self.query_one("#preview", PreviewPanel)
         browser = self.query_one("#browser", FileBrowser)
@@ -122,6 +130,17 @@ class NcviewApp(App):
             preview.styles.display = "none"
             preview.styles.width = "1fr"
             browser.query_one("#file-list").focus()
+
+    def action_toggle_split_focus(self) -> None:
+        """Tab: toggle focus between file list and preview pane in split mode."""
+        if not self._split_view or self._preview_is_open():
+            return
+        preview = self.query_one("#preview", PreviewPanel)
+        scroll = preview.query_one("#preview-scroll", VerticalScroll)
+        if scroll.has_focus:
+            self.query_one("#browser", FileBrowser).query_one("#file-list").focus()
+        else:
+            scroll.focus()
 
     @on(FileHighlighted)
     def _on_file_highlighted(self, event: FileHighlighted) -> None:
@@ -246,28 +265,39 @@ class NcviewApp(App):
         with self.suspend():
             subprocess.call([ipython], cwd=str(browser.current_dir))
 
-    def action_preview_scroll_down(self) -> None:
+    def _preview_has_focus(self) -> bool:
+        """True when the preview scroll container has focus (full-screen or split)."""
         if self._preview_is_open():
+            return True
+        if self._split_view:
+            try:
+                return self.query_one("#preview-scroll", VerticalScroll).has_focus
+            except Exception:
+                pass
+        return False
+
+    def action_preview_scroll_down(self) -> None:
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_down()
 
     def action_preview_scroll_up(self) -> None:
-        if self._preview_is_open():
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_up()
 
     def action_preview_page_down(self) -> None:
-        if self._preview_is_open():
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_page_down()
 
     def action_preview_page_up(self) -> None:
-        if self._preview_is_open():
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_page_up()
 
     def action_preview_scroll_top(self) -> None:
-        if self._preview_is_open():
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_home()
 
     def action_preview_scroll_bottom(self) -> None:
-        if self._preview_is_open():
+        if self._preview_has_focus():
             self.query_one("#preview-scroll", VerticalScroll).scroll_end()
 
     async def action_preview_open_editor(self) -> None:

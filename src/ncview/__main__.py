@@ -42,6 +42,20 @@ def main() -> None:
         _handle_subcommand()
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "--resume":
+        from ncview.utils.history import load_history
+        history = load_history()
+        if not history:
+            print("No history yet.")
+            return
+        resume_path = history[0]
+        if not Path(resume_path).is_dir():
+            print(f"Last directory no longer exists: {resume_path}")
+            return
+        from ncview.app import run
+        run(resume_path)
+        return
+
     if len(sys.argv) > 1 and sys.argv[1] == "info":
         from importlib.metadata import version
         from ncview.utils.config import config_dir
@@ -55,6 +69,7 @@ def main() -> None:
         epilog="""\
 commands:
   ncview [path]                browse a directory (default: .)
+  ncview --resume              reopen the last visited directory
   ncview pin <path> [-n name]  pin a directory for quick access
   ncview unpin <path>          remove a pinned directory
   ncview info                  show version and config path""",

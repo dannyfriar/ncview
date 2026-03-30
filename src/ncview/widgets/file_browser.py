@@ -123,6 +123,7 @@ class FileBrowser(Widget):
         ("~", "go_home", "Home"),
         ("ctrl+o", "go_back", "Back"),
         ("%", "shell_command", "Run command"),
+        ("S", "open_shell", "Shell"),  # noqa: E741
         ("x", "toggle_perms", "Permissions"),
         ("f", "start_filter", "Filter"),
     ]
@@ -796,6 +797,13 @@ class FileBrowser(Widget):
             subprocess.call(full_cmd, shell=True, cwd=str(self.current_dir))
             print()
             input("\033[2mpress Enter to continue\033[0m")
+        self._load_directory()
+
+    def action_open_shell(self) -> None:
+        """Drop into an interactive shell at the current directory."""
+        shell = os.environ.get("SHELL", "/bin/sh")
+        with self.app.suspend():
+            subprocess.call([shell], cwd=str(self.current_dir))
         self._load_directory()
 
     def action_yank_path(self) -> None:

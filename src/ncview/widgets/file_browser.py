@@ -281,11 +281,14 @@ class FileBrowser(Widget):
                 pass
 
         perms: dict[str, str] = {}
+        mtimes: dict[str, str] = {}
         if self._show_perms:
+            from datetime import datetime
             for e in scan:
                 st = stat_cache.get(e.name)
                 if st:
                     perms[e.name] = _format_perms(st.st_mode)
+                    mtimes[e.name] = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
 
         symlinks: dict[str, str] = {}
         for e in scan:
@@ -308,7 +311,7 @@ class FileBrowser(Widget):
             label = Text()
             label.append("\uf07b ", style="bold #e6db74")
             label.append("..", style="bold #e6db74")
-            row = (label, "", "") if show_perms else (label, "")
+            row = (label, "", "", "") if show_perms else (label, "")
             rows.append(row)
             keys.append("..")
 
@@ -342,9 +345,10 @@ class FileBrowser(Widget):
             if symlinks and entry.name in symlinks:
                 label.append(" \u2192 ", style="#75715e")
                 label.append(symlinks[entry.name], style="#75715e")
-            perm_text = perms.get(entry.name, "") if show_perms else None
             if show_perms:
-                rows.append((label, perm_text, size_text))
+                perm_text = perms.get(entry.name, "")
+                mtime_text = mtimes.get(entry.name, "")
+                rows.append((label, perm_text, mtime_text, size_text))
             else:
                 rows.append((label, size_text))
             keys.append(entry.name)
@@ -423,6 +427,7 @@ class FileBrowser(Widget):
         dt.add_column("Name", key="name")
         if show_perms:
             dt.add_column("Perms", key="perms")
+            dt.add_column("Modified", key="modified")
         dt.add_column("Size", key="size")
 
         # Build path map

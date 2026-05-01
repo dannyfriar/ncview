@@ -56,6 +56,20 @@ def main() -> None:
         run(resume_path)
         return
 
+    if len(sys.argv) > 1 and sys.argv[1] == "pins":
+        from ncview.utils.pins import load_pins
+        pins = load_pins()
+        if not pins:
+            print("No pins.")
+            return
+        for p in pins:
+            path = p.get("original", p["path"])
+            if p["name"]:
+                print(f"{p['name']}\t{path}")
+            else:
+                print(path)
+        return
+
     if len(sys.argv) > 1 and sys.argv[1] == "info":
         from importlib.metadata import version
         from ncview.utils.config import config_dir
@@ -70,6 +84,7 @@ def main() -> None:
 commands:
   ncview [path]                browse a directory (default: .)
   ncview --resume              reopen the last visited directory
+  ncview pins                  list all pinned directories
   ncview pin <path> [-n name]  pin a directory for quick access
   ncview unpin <path>          remove a pinned directory
   ncview info                  show version and config path""",
@@ -79,10 +94,40 @@ commands:
         "browse_path", nargs="?", default=".", metavar="path",
         help="Directory to browse (default: current directory)",
     )
+    parser.add_argument(
+        "-i", action="store_true", dest="ignore_case",
+        help="Case-insensitive pin name matching",
+    )
     args = parser.parse_args()
 
+    browse = args.browse_path
+    if not Path(browse).is_dir():
+        # Try matching against pin names
+        from ncview.utils.pins import load_pins
+        if args.ignore_case:
+            query = browse.lower()
+            matches = [
+                p for p in load_pins()
+                if p["name"] and query in p["name"].lower()
+            ]
+        else:
+            matches = [
+                p for p in load_pins()
+                if p["name"] and browse in p["name"]
+            ]
+        if len(matches) == 1:
+            browse = matches[0].get("original", matches[0]["path"])
+        elif len(matches) > 1:
+            print(f"Multiple pins match '{browse}':")
+            for m in matches:
+                print(f"  {m['name']}  {m.get('original', m['path'])}")
+            return
+        else:
+            print(f"Not a directory and no matching pin: {browse}")
+            return
+
     from ncview.app import run
-    run(args.browse_path)
+    run(browse)
 
 
 if __name__ == "__main__":

@@ -812,13 +812,12 @@ class FileBrowser(Widget):
         self._load_directory()
 
     def action_yank_path(self) -> None:
-        """Copy the highlighted file's absolute path to the system clipboard."""
-        path = self._get_highlighted_path()
-        if path is None:
-            return
-        abs_path = str(path.absolute())
-        copy_to_clipboard(abs_path)
+        """Copy the current directory path to the system clipboard."""
+        abs_path = str(self.current_dir)
+        hint = copy_to_clipboard(abs_path)
         self.notify(f"Copied: {abs_path}", severity="information")
+        if hint:
+            self.notify(hint, severity="warning")
 
     def action_delete(self) -> None:
         """Prompt to delete the highlighted file or directory."""

@@ -158,8 +158,10 @@ class HistoryScreen(ModalScreen[Path | None]):
             return
         path_str = lv.highlighted_child.name
         if path_str:
-            copy_to_clipboard(path_str)
+            hint = copy_to_clipboard(path_str)
             self.app.notify(f"Copied: {path_str}", severity="information")
+            if hint:
+                self.app.notify(hint, severity="warning")
 
     def action_cancel(self) -> None:
         self.dismiss(None)

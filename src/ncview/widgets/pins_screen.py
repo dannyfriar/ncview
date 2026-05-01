@@ -183,8 +183,10 @@ class PinsScreen(ModalScreen[Path | None]):
         pin_path = lv.highlighted_child.name
         if not pin_path:
             return
-        copy_to_clipboard(pin_path)
+        hint = copy_to_clipboard(pin_path)
         self.app.notify(f"Copied: {pin_path}", severity="information")
+        if hint:
+            self.app.notify(hint, severity="warning")
 
     def action_edit_pin(self) -> None:
         """Edit the highlighted pin's path and name."""

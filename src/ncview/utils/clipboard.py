@@ -9,15 +9,19 @@ import subprocess
 import sys
 
 
-def copy_to_clipboard(text: str) -> None:
+def copy_to_clipboard(text: str) -> str | None:
     """Copy text to system clipboard.
 
     Uses native clipboard tools (pbcopy/xclip/xsel) when running locally.
     Falls back to OSC 52 escape sequence over SSH sessions.
+    Returns a hint string if the user may need to configure something, else None.
     """
     if not _is_ssh() and _try_native(text):
-        return
+        return None
     _osc52(text)
+    if _is_ssh() and os.environ.get("TMUX"):
+        return "If paste fails, run: tmux set -g set-clipboard on"
+    return None
 
 
 def _is_ssh() -> bool:

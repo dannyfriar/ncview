@@ -37,7 +37,8 @@ class HistoryScreen(ModalScreen[Path | None]):
         align: center middle;
     }
     HistoryScreen > Vertical {
-        width: 80;
+        width: 80%;
+        max-width: 140;
         height: auto;
         max-height: 80%;
         border: thick #fd971f;

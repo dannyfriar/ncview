@@ -37,7 +37,8 @@ class PinsScreen(ModalScreen[Path | None]):
         align: center middle;
     }
     PinsScreen > Vertical {
-        width: 70;
+        width: 80%;
+        max-width: 140;
         height: auto;
         max-height: 80%;
         border: thick #ae81ff;

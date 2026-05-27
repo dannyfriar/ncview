@@ -11,6 +11,7 @@ from pathlib import Path
 from rich.table import Table as RichTable
 from rich.text import Text
 from textual import on, work
+from textual.containers import VerticalScroll
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from ncview.utils.file_info import human_size
@@ -44,11 +45,14 @@ class CsvViewer(BaseViewer):
     CsvViewer DataTable {
         height: 1fr;
     }
-    CsvViewer #csv-schema-content {
+    CsvViewer VerticalScroll {
         height: 1fr;
     }
+    CsvViewer #csv-schema-content {
+        height: auto;
+    }
     CsvViewer #csv-stats-content {
-        height: 1fr;
+        height: auto;
     }
     """
 
@@ -71,13 +75,15 @@ class CsvViewer(BaseViewer):
             with TabPane("1 Data", id="csv-data-tab"):
                 yield DataTable(id="csv-data-table", cursor_type="row")
             with TabPane("2 Schema", id="csv-schema-tab"):
-                yield Static(id="csv-schema-content", markup=False)
+                with VerticalScroll():
+                    yield Static(id="csv-schema-content", markup=False)
             with TabPane("3 Stats", id="csv-stats-tab"):
-                yield Static(
-                    "Switch to this tab to compute statistics...",
-                    id="csv-stats-content",
-                    markup=False,
-                )
+                with VerticalScroll():
+                    yield Static(
+                        "Switch to this tab to compute statistics...",
+                        id="csv-stats-content",
+                        markup=False,
+                    )
 
     async def load_content(self) -> None:
         self._load_data()

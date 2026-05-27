@@ -14,6 +14,7 @@ from pathlib import Path
 from rich.table import Table as RichTable
 from rich.text import Text
 from textual import on, work
+from textual.containers import VerticalScroll
 from textual.widgets import DataTable, Static, TabbedContent, TabPane
 
 from ncview.utils.file_info import human_size
@@ -22,6 +23,19 @@ from ncview.viewers.base import BaseViewer
 DATA_PREVIEW_ROWS = 1_000
 STATS_ROWS = 10_000
 MAX_DISPLAY_COLS = 50
+
+
+class _PqScroll(VerticalScroll):
+    """VerticalScroll with vim-style j/k scrolling for parquet schema/stats."""
+
+    BINDINGS = [
+        ("j", "scroll_down", "Down"),
+        ("k", "scroll_up", "Up"),
+        ("g", "scroll_home", "Top"),
+        ("G", "scroll_end", "Bottom"),  # noqa: E741
+        ("ctrl+d", "page_down", "Page down"),
+        ("ctrl+u", "page_up", "Page up"),
+    ]
 
 
 class ParquetViewer(BaseViewer):
@@ -47,11 +61,17 @@ class ParquetViewer(BaseViewer):
     ParquetViewer DataTable {
         height: 1fr;
     }
-    ParquetViewer #schema-content {
+    ParquetViewer VerticalScroll {
         height: 1fr;
     }
+    ParquetViewer VerticalScroll:focus {
+        border: none;
+    }
+    ParquetViewer #schema-content {
+        height: auto;
+    }
     ParquetViewer #stats-content {
-        height: 1fr;
+        height: auto;
     }
     """
 
@@ -71,11 +91,13 @@ class ParquetViewer(BaseViewer):
         yield Static(id="pq-info")
         with TabbedContent("1 Schema", "2 Data", "3 Stats", initial="schema-tab"):
             with TabPane("1 Schema", id="schema-tab"):
-                yield Static(id="schema-content", markup=False)
+                with _PqScroll():
+                    yield Static(id="schema-content", markup=False)
             with TabPane("2 Data", id="data-tab"):
                 yield DataTable(id="data-table", cursor_type="row")
             with TabPane("3 Stats", id="stats-tab"):
-                yield Static("Switch to this tab to compute statistics...", id="stats-content", markup=False)
+                with _PqScroll():
+                    yield Static("Switch to this tab to compute statistics...", id="stats-content", markup=False)
 
     async def load_content(self) -> None:
         self._load_metadata()
@@ -86,6 +108,12 @@ class ParquetViewer(BaseViewer):
         if event.pane.id == "stats-tab" and not self._stats_loaded:
             self._stats_loaded = True
             self._load_stats()
+        # Focus the scroll container so j/k/arrows work
+        try:
+            scroll = event.pane.query_one(_PqScroll)
+            scroll.focus()
+        except Exception:
+            pass
 
     @work(thread=True)
     def _load_metadata(self) -> None:
@@ -122,7 +150,6 @@ class ParquetViewer(BaseViewer):
                 field = arrow_schema.field(i)
                 table.add_row(str(i), field.name, str(field.type))
 
-            table.caption = f"Total rows: {num_rows:,}  |  Row groups: {num_row_groups}  |  File size: {human_size(file_size)}"
             self.app.call_from_thread(schema_widget.update, table)
 
         except Exception as e:

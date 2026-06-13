@@ -15,7 +15,7 @@ from ncview.viewers.base import BaseViewer
 
 MAX_DEPTH = 50
 MAX_NODES = 50_000
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 MB
 
 
 class JsonTree(Tree):

@@ -82,7 +82,7 @@ def main() -> None:
         description="Terminal file browser with vim keybindings",
         epilog="""\
 commands:
-  ncview [path]                browse a directory (default: .)
+  ncview [path]                browse a directory or open a file (default: .)
   ncview --resume              reopen the last visited directory
   ncview pins                  list all pinned directories
   ncview pin <path> [-n name]  pin a directory for quick access
@@ -101,6 +101,11 @@ commands:
     args = parser.parse_args()
 
     browse = args.browse_path
+    # If a real file path was given, open it directly (run() handles file vs dir)
+    if Path(browse).is_file():
+        from ncview.app import run
+        run(browse)
+        return
     if not Path(browse).is_dir():
         # Try matching against pin names
         from ncview.utils.pins import load_pins

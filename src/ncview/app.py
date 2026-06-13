@@ -71,9 +71,10 @@ class NcviewApp(App):
         ("3", "viewer_tab('3')", "Tab 3"),
     ]
 
-    def __init__(self, start_path: Path | None = None, **kwargs) -> None:
+    def __init__(self, start_path: Path | None = None, open_file: Path | None = None, **kwargs) -> None:
         super().__init__(**kwargs)
         self._start_path = start_path or Path.cwd()
+        self._open_file = open_file
         self._preview_path: Path | None = None
         self._split_view = False
         self._split_pending_path: Path | None = None
@@ -94,6 +95,9 @@ class NcviewApp(App):
         browser.focus()
         preview = self.query_one("#preview", PreviewPanel)
         preview.border_title = "Preview"
+        # If launched with a file argument, open it in full-screen preview
+        if self._open_file is not None:
+            self.post_message(FileSelected(self._open_file))
 
     def _preview_is_open(self) -> bool:
         """True when in full-screen preview mode (not split)."""
@@ -366,13 +370,18 @@ class NcviewApp(App):
 
 
 def run(start: str = ".") -> None:
-    """Run the ncview app."""
+    """Run the ncview app.
+
+    If `start` is a file, opens its parent directory and auto-previews the file.
+    """
     path = Path(start).absolute()
     if not path.exists():
         import sys
         print(f"Error: {path} does not exist", file=sys.stderr)
         sys.exit(1)
+    open_file: Path | None = None
     if path.is_file():
+        open_file = path
         path = path.parent
-    app = NcviewApp(start_path=path)
+    app = NcviewApp(start_path=path, open_file=open_file)
     app.run()

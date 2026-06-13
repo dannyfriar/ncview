@@ -128,7 +128,10 @@ commands:
                 print(f"  {m['name']}  {m.get('original', m['path'])}")
             return
         else:
-            print(f"Not a directory and no matching pin: {browse}")
+            print(f"No file or directory matching: {browse}")
+            # Only suggest pin search for bare names (no path separators)
+            if "/" not in browse and "\\" not in browse:
+                print(f"No pins matching {browse}, run `ncview pins` for available pins")
             return
 
     from ncview.app import run

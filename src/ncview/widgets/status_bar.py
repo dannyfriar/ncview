@@ -27,6 +27,7 @@ class StatusBar(Widget):
 
     mode = reactive("browser")
     search_active = reactive(False)
+    visual_active = reactive(False)
 
     _BROWSER_LINE1_BASE = [
         ("Nav", [("j/k", "\u2195"), ("h/l", "\u2194"), ("g/G", "top/end"), ("\u2303o", "back")]),
@@ -41,7 +42,15 @@ class StatusBar(Widget):
     ]
 
     _BROWSER_LINE2 = [
-        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy path"), ("d", "delete"), ("%", "shell command"), ("S", "shell")]),
+        ("Actions", [("Enter", "open"), ("e", "edit"), ("E", "edit path"), ("t", "touch"), ("M", "mkdir"), ("r", "rename"), ("y", "copy path"), ("d", "delete"), ("V", "visual select"), ("S", "shell")]),
+    ]
+
+    _VISUAL_LINE1 = [
+        ("Visual", [("j/k", "extend"), ("g/G", "top/end")]),
+    ]
+
+    _VISUAL_LINE2 = [
+        ("Actions", [("y", "copy selected"), ("d", "delete selected"), ("Esc/V", "exit visual")]),
     ]
 
     _PREVIEW_LINE1 = [
@@ -66,6 +75,9 @@ class StatusBar(Widget):
     def watch_search_active(self) -> None:
         self._render_hints()
 
+    def watch_visual_active(self) -> None:
+        self._render_hints()
+
     @staticmethod
     def _build_line(hints: list) -> Text:
         text = Text()
@@ -83,6 +95,8 @@ class StatusBar(Widget):
     def _render_hints(self) -> None:
         if self.mode == "preview":
             line1, line2 = self._PREVIEW_LINE1, self._PREVIEW_LINE2
+        elif self.visual_active:
+            line1, line2 = self._VISUAL_LINE1, self._VISUAL_LINE2
         else:
             line1 = self._BROWSER_LINE1_SEARCH if self.search_active else self._BROWSER_LINE1_BASE
             line2 = self._BROWSER_LINE2

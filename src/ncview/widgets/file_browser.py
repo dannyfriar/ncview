@@ -13,6 +13,7 @@ from pathlib import Path
 
 from rich.text import Text
 from textual import on, work
+from textual.coordinate import Coordinate
 from textual.events import Key
 from textual.message import Message
 from textual.widget import Widget
@@ -45,7 +46,6 @@ class InputMode(Enum):
     TOUCH = "touch"
     RENAME = "rename"
     MKDIR = "mkdir"
-    SHELL = "shell"
     FILTER = "filter"
 
 
@@ -55,7 +55,6 @@ _INPUT_IDS: dict[InputMode, str] = {
     InputMode.TOUCH: "touch-input",
     InputMode.RENAME: "rename-input",
     InputMode.MKDIR: "mkdir-input",
-    InputMode.SHELL: "shell-input",
     InputMode.FILTER: "filter-input",
 }
 
@@ -122,10 +121,10 @@ class FileBrowser(Widget):
         ("M", "mkdir", "Mkdir"),  # noqa: E741
         ("~", "go_home", "Home"),
         ("ctrl+o", "go_back", "Back"),
-        ("%", "shell_command", "Run command"),
         ("S", "open_shell", "Shell"),  # noqa: E741
         ("x", "toggle_perms", "Permissions"),
         ("f", "start_filter", "Filter"),
+        ("V", "visual_toggle", "Visual"),  # noqa: E741
     ]
 
     def __init__(self, start_path: Path | None = None, **kwargs) -> None:
@@ -147,6 +146,10 @@ class FileBrowser(Widget):
         self._focus_name: str | None = None
         self._dir_mtime: float = 0.0
         self._filter_pattern: str = ""
+        self._visual_mode = False
+        self._visual_anchor: int = -1
+        self._base_labels: list = []  # Original row labels (before selection markers)
+        self._row_keys: list[str] = []  # Row keys in display order
 
     def compose(self):
         yield DataTable(id="file-list", cursor_type="row", show_header=False)
@@ -155,7 +158,6 @@ class FileBrowser(Widget):
         yield Input(placeholder="New file name...", id="touch-input")
         yield Input(placeholder="Rename to...", id="rename-input")
         yield Input(placeholder="New directory name...", id="mkdir-input")
-        yield Input(placeholder="Command ({} = file path)...", id="shell-input")
         yield Input(placeholder="Filter regex (e.g. \\.py$, test_.*, \\.(js|ts)$)...", id="filter-input")
 
     def on_mount(self) -> None:
@@ -178,6 +180,11 @@ class FileBrowser(Widget):
                 event.prevent_default()
                 event.stop()
                 self._finish_input()
+            return
+        if self._visual_mode and event.key == "escape":
+            event.prevent_default()
+            event.stop()
+            self._exit_visual_mode()
             return
         if event.key == "backspace":
             event.prevent_default()
@@ -436,6 +443,16 @@ class FileBrowser(Widget):
         for entry in entries:
             self._path_map[entry.name] = entry
 
+        # Store base labels for visual-mode toggling
+        self._base_labels = [row[0] for row in rows]
+        self._row_keys = list(keys)
+
+        # Exit visual mode on directory reload
+        if self._visual_mode:
+            self._visual_mode = False
+            self._visual_anchor = -1
+            self._update_visual_hint(False)
+
         # Batch add rows with deferred screen refresh
         with self.app.batch_update():
             for row, key in zip(rows, keys):
@@ -475,6 +492,94 @@ class FileBrowser(Widget):
         path = self._get_highlighted_path()
         if path is not None:
             self.post_message(FileHighlighted(path))
+        if self._visual_mode:
+            self._render_visual_selection()
+            self._refresh_subtitle()
+
+    def action_visual_toggle(self) -> None:
+        """Enter or exit visual selection mode (vim-style)."""
+        dt = self.query_one("#file-list", DataTable)
+        if self._visual_mode:
+            self._exit_visual_mode()
+        else:
+            cursor_row = dt.cursor_row
+            if cursor_row is None or cursor_row < 0:
+                return
+            # Don't allow anchoring on ".."
+            if cursor_row < len(self._row_keys) and self._row_keys[cursor_row] == "..":
+                return
+            self._visual_mode = True
+            self._visual_anchor = cursor_row
+            self._render_visual_selection()
+            self._refresh_subtitle()
+            self._update_visual_hint(True)
+
+    def _exit_visual_mode(self) -> None:
+        self._visual_mode = False
+        self._visual_anchor = -1
+        self._restore_base_labels()
+        self._refresh_subtitle()
+        self._update_visual_hint(False)
+
+    def _update_visual_hint(self, active: bool) -> None:
+        from ncview.widgets.status_bar import StatusBar
+        try:
+            self.app.query_one("#status-bar", StatusBar).visual_active = active
+        except Exception:
+            pass
+
+    def _selected_range(self) -> tuple[int, int]:
+        """Return (start, end) inclusive row indices for the current visual selection."""
+        dt = self.query_one("#file-list", DataTable)
+        cursor = dt.cursor_row if dt.cursor_row is not None else self._visual_anchor
+        return (min(self._visual_anchor, cursor), max(self._visual_anchor, cursor))
+
+    def _selected_paths(self) -> list[Path]:
+        """Return paths for all currently selected rows (excluding '..')."""
+        if not self._visual_mode:
+            p = self._get_highlighted_path()
+            return [p] if p is not None else []
+        start, end = self._selected_range()
+        paths: list[Path] = []
+        for i in range(start, end + 1):
+            if 0 <= i < len(self._row_keys):
+                key = self._row_keys[i]
+                if key == "..":
+                    continue
+                p = self._path_map.get(key)
+                if p is not None:
+                    paths.append(p)
+        return paths
+
+    def _render_visual_selection(self) -> None:
+        """Update row labels to show selection markers for the [anchor, cursor] range."""
+        if not self._base_labels:
+            return
+        dt = self.query_one("#file-list", DataTable)
+        start, end = self._selected_range()
+        for i, base in enumerate(self._base_labels):
+            if start <= i <= end and i < len(self._row_keys) and self._row_keys[i] != "..":
+                marked = Text("▌", style="bold #fd971f")
+                marked.append(" ")
+                marked.append_text(base)
+                value = marked
+            else:
+                value = base
+            try:
+                dt.update_cell_at(Coordinate(i, 0), value)
+            except Exception:
+                pass
+
+    def _restore_base_labels(self) -> None:
+        """Reset all row labels to their unmarked form."""
+        if not self._base_labels:
+            return
+        dt = self.query_one("#file-list", DataTable)
+        for i, base in enumerate(self._base_labels):
+            try:
+                dt.update_cell_at(Coordinate(i, 0), base)
+            except Exception:
+                pass
 
     @on(DataTable.RowSelected)
     def _on_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -605,14 +710,17 @@ class FileBrowser(Widget):
         self._refresh_subtitle()
 
     def _refresh_subtitle(self) -> None:
-        """Rebuild border subtitle, appending search info if active."""
+        """Rebuild border subtitle, appending search/visual info if active."""
         if self._search_matches:
-            search_info = f" | /{self._search_query} [{self._search_index + 1}/{len(self._search_matches)}]"
+            extra = f" | /{self._search_query} [{self._search_index + 1}/{len(self._search_matches)}]"
         elif self._search_query:
-            search_info = f" | /{self._search_query} [no matches]"
+            extra = f" | /{self._search_query} [no matches]"
         else:
-            search_info = ""
-        self.border_subtitle = self._base_subtitle + search_info
+            extra = ""
+        if self._visual_mode:
+            count = len(self._selected_paths())
+            extra += f" | VISUAL [{count}]"
+        self.border_subtitle = self._base_subtitle + extra
 
     def _update_search_hint(self, active: bool) -> None:
         """Toggle n/N hint in the status bar."""
@@ -769,41 +877,6 @@ class FileBrowser(Widget):
         self._filter_pattern = pattern
         self._load_directory()
 
-    def action_shell_command(self) -> None:
-        """Open input to run a shell command on the highlighted file."""
-        path = self._get_highlighted_path()
-        if path is None:
-            return
-        self._input_mode = InputMode.SHELL
-        shell_input = self.query_one("#shell-input", Input)
-        shell_input.value = ""
-        shell_input.styles.display = "block"
-        shell_input.focus()
-
-    @on(Input.Submitted, "#shell-input")
-    def _on_shell_submitted(self, event: Input.Submitted) -> None:
-        cmd = event.value.strip()
-        self._finish_input()
-        if not cmd:
-            return
-        path = self._get_highlighted_path()
-        if path is None:
-            return
-        import shlex
-        import subprocess
-        file_path = shlex.quote(str(path))
-        # Replace {} with the file path, or append it if no {} present
-        if "{}" in cmd:
-            full_cmd = cmd.replace("{}", file_path)
-        else:
-            full_cmd = f"{cmd} {file_path}"
-        with self.app.suspend():
-            print(f"\033[1m$ {full_cmd}\033[0m")
-            subprocess.call(full_cmd, shell=True, cwd=str(self.current_dir))
-            print()
-            input("\033[2mpress Enter to continue\033[0m")
-        self._load_directory()
-
     def action_open_shell(self) -> None:
         """Drop into an interactive shell at the current directory."""
         shell = os.environ.get("SHELL", "/bin/sh")
@@ -812,7 +885,19 @@ class FileBrowser(Widget):
         self._load_directory()
 
     def action_yank_path(self) -> None:
-        """Copy the current directory path to the system clipboard."""
+        """Copy the current directory path (or selected files in visual mode)."""
+        if self._visual_mode:
+            paths = self._selected_paths()
+            if not paths:
+                self.notify("No files selected", severity="warning")
+                return
+            text = "\n".join(str(p) for p in paths)
+            hint = copy_to_clipboard(text)
+            self.notify(f"Copied {len(paths)} path{'s' if len(paths) != 1 else ''}", severity="information")
+            if hint:
+                self.notify(hint, severity="warning")
+            self._exit_visual_mode()
+            return
         abs_path = str(self.current_dir)
         hint = copy_to_clipboard(abs_path)
         self.notify(f"Copied: {abs_path}", severity="information")
@@ -820,7 +905,32 @@ class FileBrowser(Widget):
             self.notify(hint, severity="warning")
 
     def action_delete(self) -> None:
-        """Prompt to delete the highlighted file or directory."""
+        """Prompt to delete the highlighted file or directory (or all selected in visual mode)."""
+        from ncview.widgets.confirm_screen import ConfirmScreen
+
+        if self._visual_mode:
+            paths = self._selected_paths()
+            if not paths:
+                return
+            count = len(paths)
+            preview = ", ".join(p.name for p in paths[:3])
+            if count > 3:
+                preview += f", ... (+{count - 3} more)"
+
+            def _on_result(confirmed: bool) -> None:
+                if not confirmed:
+                    return
+                self._do_delete_many(paths)
+
+            self.app.push_screen(
+                ConfirmScreen(
+                    title=f"Delete {count} items",
+                    message=f"Are you sure you want to delete:\n{preview}",
+                ),
+                callback=_on_result,
+            )
+            return
+
         path = self._get_highlighted_path()
         if path is None:
             return
@@ -835,8 +945,6 @@ class FileBrowser(Widget):
 
         kind = "directory" if path.is_dir() else "file"
         name = path.name
-
-        from ncview.widgets.confirm_screen import ConfirmScreen
 
         def _on_result(confirmed: bool) -> None:
             if not confirmed:
@@ -867,3 +975,29 @@ class FileBrowser(Widget):
             self.app.call_from_thread(
                 self.notify, f"Delete failed: {exc}", severity="error"
             )
+
+    @work(thread=True)
+    def _do_delete_many(self, paths: list[Path]) -> None:
+        """Delete multiple files/directories in a background thread."""
+        errors: list[str] = []
+        deleted = 0
+        for path in paths:
+            try:
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                deleted += 1
+            except OSError as exc:
+                errors.append(f"{path.name}: {exc}")
+        if errors:
+            self.app.call_from_thread(
+                self.notify,
+                f"Deleted {deleted}, {len(errors)} failed: {errors[0]}",
+                severity="error",
+            )
+        else:
+            self.app.call_from_thread(
+                self.notify, f"Deleted {deleted} items", severity="information"
+            )
+        self.app.call_from_thread(self._load_directory)
